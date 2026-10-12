@@ -58,21 +58,16 @@ jobs:
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - name: Build args
-        run: |
-          {
-            echo "VERSION=$(yq '.version' bindplane_collector/config.yaml)"
-            echo "BUILD_FROM=$(yq '.build_from.${{ matrix.arch }}' bindplane_collector/build.yaml)"
-          } >> "$GITHUB_ENV"
+        run: echo "VERSION=$(yq '.version' bindplane_collector/config.yaml)" >> "$GITHUB_ENV"
       - name: Build
         run: |
           docker buildx build bindplane_collector \
             --platform ${{ matrix.platform }} \
-            --build-arg BUILD_FROM="$BUILD_FROM" \
             --build-arg BUILD_ARCH=${{ matrix.arch }} \
             --build-arg BUILD_VERSION="$VERSION" \
             --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \
             --label org.opencontainers.image.version="$VERSION" \
-            --label io.hass.type=addon \
+            --label io.hass.type=app \
             --label io.hass.arch=${{ matrix.arch }} \
             --label io.hass.version="$VERSION" \
             --tag "$IMAGE:$VERSION" \
