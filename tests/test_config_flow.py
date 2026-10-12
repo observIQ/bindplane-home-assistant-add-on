@@ -52,6 +52,7 @@ async def test_discovery_with_api_key_creates_configuration(
     aioclient_mock.get(f"{API}/secret-keys", json={"defaultSecretKey": "s3cret"})
     aioclient_mock.get(f"{API}/configurations", json={"configurations": [{"metadata": {"name": "Mac"}}]})
     aioclient_mock.get(f"{API}/destinations", json={"destinations": [{"metadata": {"name": "grafana"}}]})
+    aioclient_mock.get(f"{API}/collectors/agent-1", status=404)
     aioclient_mock.post(f"{API}/apply", json={"updates": [{"status": "created"}]})
     aioclient_mock.post(f"{API}/rollouts/home-assistant/start", json={})
 
@@ -165,3 +166,65 @@ async def test_user_installs_and_starts_addon(hass: HomeAssistant, addon):
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"]["addon_slug"] == DISCOVERY.slug
+
+
+async def test_missing_permission_on_apply_returns_to_api_key(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, addon
+):
+    aioclient_mock.get(f"{API}/secret-keys", json={"defaultSecretKey": "s3cret"})
+    aioclient_mock.get(f"{API}/configurations", json={"configurations": []})
+    aioclient_mock.get(f"{API}/destinations", json={"destinations": []})
+    aioclient_mock.get(f"{API}/collectors/agent-1", status=404)
+    aioclient_mock.post(f"{API}/apply", status=403, json={"errors": ["missing permission WriteResources"]})
+
+    result = await discovered(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "api_key"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"api_url": "https://app.bindplane.com", "api_key": "bps_x", "project_id": "p1"}
+    )
+    assert result["step_id"] == "configuration"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"configuration": "__create__"})
+    assert result["step_id"] == "api_key"
+    assert result["errors"] == {"base": "missing_permission"}
+    assert result["description_placeholders"] == {"error": "missing permission WriteResources"}
+
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{API}/secret-keys", json={"defaultSecretKey": "s3cret"})
+    aioclient_mock.get(f"{API}/configurations", json={"configurations": []})
+    aioclient_mock.get(f"{API}/destinations", json={"destinations": []})
+    aioclient_mock.get(f"{API}/collectors/agent-1", status=404)
+    aioclient_mock.post(f"{API}/apply", json={"updates": [{"status": "created"}]})
+    aioclient_mock.post(f"{API}/rollouts/home-assistant/start", json={})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"api_url": "https://app.bindplane.com", "api_key": "bps_better", "project_id": "p1"}
+    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"configuration": "__create__"})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"]["api_key"] == "bps_better"
+
+
+async def test_missing_read_permission_shown_on_api_key(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, addon
+):
+    aioclient_mock.get(f"{API}/secret-keys", status=403, json={"errors": ["missing permission ReadSecrets"]})
+    result = await discovered(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "api_key"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"api_url": "https://app.bindplane.com", "api_key": "bps_x", "project_id": "p1"}
+    )
+    assert result["errors"] == {"base": "missing_permission"}
+    assert result["description_placeholders"]["error"] == "missing permission ReadSecrets"
+
+
+async def test_change_api_key_from_configuration(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, addon):
+    aioclient_mock.get(f"{API}/secret-keys", json={"defaultSecretKey": "s3cret"})
+    aioclient_mock.get(f"{API}/configurations", json={"configurations": []})
+    aioclient_mock.get(f"{API}/destinations", json={"destinations": []})
+    aioclient_mock.get(f"{API}/collectors/agent-1", status=404)
+    result = await discovered(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "api_key"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"api_url": "https://app.bindplane.com", "api_key": "k"}
+    )
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"configuration": "__change_api_key__"})
+    assert result["step_id"] == "api_key" and not result["errors"]

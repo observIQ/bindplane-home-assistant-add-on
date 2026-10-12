@@ -69,6 +69,20 @@ Go to **Settings → Devices & services → Add integration → Bindplane** and 
 
 The integration writes these into the add-on's options and restarts it.
 
+#### API key permissions
+
+Create the key in Bindplane under **Project Settings → API Keys**. A scoped key (`bps_…`) needs:
+
+| Resource | Access | Used for |
+|---|---|---|
+| Secrets | Read-only | Fetching your secret key |
+| Configurations | Read-only | Listing configurations and destinations |
+| Collectors | Read-only | Collector status sensors |
+| Resources | Read and write | Creating the `home-assistant` configuration |
+| Rollouts | Read and write | Rolling it out |
+
+Scoped keys also need the **project ID**. Resources and Rollouts are only used if you let the integration create the configuration. A classic key works if your Bindplane user can edit configurations. If a permission is missing, setup shows the one Bindplane reported and takes you back to the API key step.
+
 Already installed the add-on yourself? Home Assistant shows **Bindplane Collector discovered** under **Settings → Devices & services**. Click **Configure** and you go straight to step 3.
 
 Not on Home Assistant OS, or already running a collector somewhere else? Pick **Somewhere else** and enter its OTLP/HTTP URL (e.g. `http://192.168.1.20:4318`).

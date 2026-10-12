@@ -24,7 +24,7 @@
       },
       "api_key": {
         "title": "Bindplane API key",
-        "description": "Create an API key in Bindplane under **Settings → API Keys**.",
+        "description": "Create an API key in Bindplane under **Project Settings → API Keys**.\n\nA scoped key (starts with `bps_`) needs these permissions:\n- **Secrets**: Read-only\n- **Configurations**: Read-only\n- **Collectors**: Read-only\n- **Resources**: Read and write\n- **Rollouts**: Read and write\n\nResources and Rollouts are only used to create the home-assistant configuration. A classic key works if your Bindplane user can edit configurations.",
         "data": {
           "api_url": "Bindplane URL",
           "api_key": "API key",
@@ -37,7 +37,7 @@
       },
       "configuration": {
         "title": "Choose a configuration",
-        "description": "Bindplane configurations decide where the collector sends data. Creating **{configuration}** adds an OpenTelemetry (OTLP) source that receives from Home Assistant and sends to the destinations you pick. You can change it later in Bindplane.",
+        "description": "Bindplane configurations decide where the collector sends data. Creating **{configuration}** adds an OpenTelemetry (OTLP) source that receives from Home Assistant and sends to the destinations you pick. You can change it later in Bindplane. Pick **Use a different API key** to go back.",
         "data": {
           "configuration": "Configuration",
           "destinations": "Destinations"
@@ -70,9 +70,10 @@
       "start_addon": "Starting the Bindplane Collector add-on."
     },
     "error": {
-      "invalid_auth": "Bindplane rejected the API key. Scoped keys (bps_) also need the project ID.",
-      "cannot_connect": "Could not reach Bindplane.",
-      "apply_failed": "Bindplane could not create the configuration: {error}"
+      "invalid_auth": "Bindplane rejected the API key. Scoped keys (bps_) also need the project ID, and the key must have access to that project. ({error})",
+      "cannot_connect": "Could not reach Bindplane: {error}",
+      "apply_failed": "Bindplane could not create the configuration: {error}",
+      "missing_permission": "The API key is missing a permission: {error}. Create a key with the permissions listed above."
     },
     "abort": {
       "already_configured": "This collector is already set up.",
@@ -105,7 +106,8 @@
   "selector": {
     "configuration": {
       "options": {
-        "__create__": "Create or update home-assistant"
+        "__create__": "Create or update home-assistant",
+        "__change_api_key__": "↩ Use a different API key"
       }
     }
   },

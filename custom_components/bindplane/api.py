@@ -6,6 +6,8 @@ from typing import Any
 
 import aiohttp
 
+from homeassistant.util.json import json_loads
+
 from .const import DEFAULT_CONFIGURATION
 
 AGENT_STATUS = {
@@ -25,6 +27,17 @@ class BindplaneError(Exception):
 
 class BindplaneAuthError(BindplaneError):
     """Bindplane rejected the API key."""
+
+
+class BindplanePermissionError(BindplaneError):
+    """The API key lacks a permission."""
+
+
+def _error_text(body: str) -> str:
+    try:
+        return "; ".join(json_loads(body)["errors"])
+    except (ValueError, KeyError, TypeError):
+        return body[:300]
 
 
 def opamp_endpoint(api_url: str) -> str:
@@ -75,10 +88,12 @@ class BindplaneClient:
             async with self._session.request(
                 method, self._url + path, json=json, headers=self._headers, timeout=aiohttp.ClientTimeout(total=15)
             ) as resp:
-                if resp.status in (401, 403):
-                    raise BindplaneAuthError(await resp.text())
+                if resp.status == 401:
+                    raise BindplaneAuthError(_error_text(await resp.text()))
+                if resp.status == 403:
+                    raise BindplanePermissionError(_error_text(await resp.text()))
                 if resp.status >= 400:
-                    raise BindplaneError(f"{resp.status}: {await resp.text()}")
+                    raise BindplaneError(f"{resp.status}: {_error_text(await resp.text())}")
                 return await resp.json(content_type=None)
         except (aiohttp.ClientError, TimeoutError) as err:
             raise BindplaneError(str(err)) from err
@@ -101,7 +116,9 @@ class BindplaneClient:
         """Create or update the Home Assistant configuration and roll it out."""
         data = await self._request("POST", "/apply", {"resources": [configuration_resource(name, destinations)]})
         for update in data.get("updates") or []:
-            if update.get("status") in ("invalid", "error", "forbidden"):
+            if update.get("status") == "forbidden":
+                raise BindplanePermissionError(update.get("reason") or "forbidden")
+            if update.get("status") in ("invalid", "error"):
                 raise BindplaneError(update.get("reason") or update["status"])
         await self._request("POST", f"/rollouts/{name}/start", {})
 

@@ -40,10 +40,11 @@ from homeassistant.helpers.selector import (
 )
 from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 
-from .api import BindplaneAuthError, BindplaneClient, BindplaneError, opamp_endpoint
+from .api import BindplaneAuthError, BindplaneClient, BindplaneError, BindplanePermissionError, opamp_endpoint
 from .const import (
     ADDON_NAME,
     ADDON_SLUG,
+    CHANGE_API_KEY,
     CONF_ADDON_SLUG,
     CONF_AGENT_ID,
     CONF_API_KEY,
@@ -211,27 +212,31 @@ class BindplaneConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_api_key(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Connect with a Bindplane API key."""
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            self._client = BindplaneClient(
-                async_get_clientsession(self.hass),
-                user_input[CONF_API_URL],
-                user_input[CONF_API_KEY],
-                user_input.get(CONF_PROJECT_ID),
-            )
-            try:
-                self._secret_key = await self._client.secret_key()
-                self._configurations = await self._client.configurations()
-                self._destinations = await self._client.destinations()
-            except BindplaneAuthError:
-                errors["base"] = "invalid_auth"
-            except BindplaneError as err:
-                _LOGGER.debug("Bindplane API error: %s", err)
-                errors["base"] = "cannot_connect"
-            else:
-                self._data.update(user_input)
-                return await self.async_step_configuration()
+        if user_input is None:
+            return self._show_api_key_form()
+        self._client = BindplaneClient(
+            async_get_clientsession(self.hass),
+            user_input[CONF_API_URL],
+            user_input[CONF_API_KEY],
+            user_input.get(CONF_PROJECT_ID),
+        )
+        self._data.pop(CONF_PROJECT_ID, None)
+        self._data.update(user_input)
+        try:
+            self._secret_key = await self._client.secret_key()
+            self._configurations = await self._client.configurations()
+            self._destinations = await self._client.destinations()
+            if agent_id := self._data.get(CONF_AGENT_ID):
+                await self._client.collector(agent_id)
+        except BindplaneAuthError as err:
+            return self._show_api_key_form("invalid_auth", str(err))
+        except BindplanePermissionError as err:
+            return self._show_api_key_form("missing_permission", str(err))
+        except BindplaneError as err:
+            return self._show_api_key_form("cannot_connect", str(err))
+        return await self.async_step_configuration()
 
+    def _show_api_key_form(self, error: str | None = None, detail: str = "") -> ConfigFlowResult:
         schema = vol.Schema(
             {
                 vol.Required(CONF_API_URL, default=DEFAULT_API_URL): URL,
@@ -239,8 +244,12 @@ class BindplaneConfigFlow(ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_PROJECT_ID): str,
             }
         )
+        suggested = {k: self._data[k] for k in (CONF_API_URL, CONF_PROJECT_ID) if self._data.get(k)}
         return self.async_show_form(
-            step_id="api_key", data_schema=self.add_suggested_values_to_schema(schema, user_input), errors=errors
+            step_id="api_key",
+            data_schema=self.add_suggested_values_to_schema(schema, suggested),
+            errors={"base": error} if error else None,
+            description_placeholders={"error": detail},
         )
 
     async def async_step_configuration(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -250,10 +259,16 @@ class BindplaneConfigFlow(ConfigFlow, domain=DOMAIN):
         placeholders = {"configuration": DEFAULT_CONFIGURATION, "error": ""}
         if user_input is not None:
             name = user_input[CONF_CONFIGURATION]
+            if name == CHANGE_API_KEY:
+                return self._show_api_key_form()
             try:
                 if name == CREATE_CONFIGURATION:
                     name = DEFAULT_CONFIGURATION
                     await self._client.apply_configuration(user_input.get(CONF_DESTINATIONS, []), name)
+            except BindplaneAuthError as err:
+                return self._show_api_key_form("invalid_auth", str(err))
+            except BindplanePermissionError as err:
+                return self._show_api_key_form("missing_permission", str(err))
             except BindplaneError as err:
                 errors["base"] = "apply_failed"
                 placeholders["error"] = str(err)
@@ -266,7 +281,7 @@ class BindplaneConfigFlow(ConfigFlow, domain=DOMAIN):
             {
                 vol.Required(CONF_CONFIGURATION, default=CREATE_CONFIGURATION): SelectSelector(
                     SelectSelectorConfig(
-                        options=[CREATE_CONFIGURATION, *self._configurations],
+                        options=[CREATE_CONFIGURATION, *self._configurations, CHANGE_API_KEY],
                         translation_key="configuration",
                         mode=SelectSelectorMode.DROPDOWN,
                     )
