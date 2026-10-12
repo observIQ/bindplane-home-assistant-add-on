@@ -1,0 +1,43 @@
+{
+  "entity": {
+    "sensor": {
+      "records_exported": {
+        "default": "mdi:upload-network"
+      },
+      "records_dropped": {
+        "default": "mdi:delete-alert"
+      },
+      "export_status": {
+        "default": "mdi:check-network",
+        "state": {
+          "error": "mdi:close-network",
+          "pending": "mdi:timer-sand"
+        }
+      },
+      "collector_status": {
+        "default": "mdi:lan-connect",
+        "state": {
+          "disconnected": "mdi:lan-disconnect",
+          "error": "mdi:alert-circle"
+        }
+      },
+      "collector_configuration": {
+        "default": "mdi:file-cog"
+      },
+      "collector_version": {
+        "default": "mdi:tag"
+      },
+      "metrics_exported": {
+        "default": "mdi:chart-line"
+      }
+    }
+  },
+  "services": {
+    "flush": {
+      "service": "mdi:send"
+    },
+    "send_test": {
+      "service": "mdi:test-tube"
+    }
+  }
+}

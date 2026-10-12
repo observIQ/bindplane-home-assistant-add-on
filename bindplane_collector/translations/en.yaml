@@ -1,0 +1,19 @@
+configuration:
+  endpoint:
+    name: OpAMP endpoint
+    description: Bindplane OpAMP websocket URL. Bindplane Cloud is wss://app.bindplane.com/v1/opamp.
+  secret_key:
+    name: Secret key
+    description: Bindplane secret key. The Bindplane integration fills this in for you.
+  agent_name:
+    name: Collector name
+    description: Name shown for this collector in Bindplane.
+  labels:
+    name: Labels
+    description: Collector labels as key=value, used to match Bindplane configurations.
+  tls_insecure:
+    name: Skip TLS verification
+    description: Only for self-hosted Bindplane with a self-signed certificate.
+network:
+  4317/tcp: OTLP/gRPC, only needed for devices outside Home Assistant
+  4318/tcp: OTLP/HTTP, only needed for devices outside Home Assistant

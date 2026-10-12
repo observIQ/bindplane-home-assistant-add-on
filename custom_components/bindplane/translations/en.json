@@ -1,0 +1,168 @@
+{
+  "config": {
+    "flow_title": "Bindplane Collector",
+    "step": {
+      "user": {
+        "title": "Where is your collector?",
+        "description": "Bindplane exports Home Assistant logs and events over OpenTelemetry to a Bindplane-managed collector.",
+        "menu_options": {
+          "addon": "Run it here (Bindplane Collector add-on)",
+          "external": "Somewhere else (enter its OTLP URL)"
+        }
+      },
+      "hassio_confirm": {
+        "title": "Bindplane Collector found",
+        "description": "The Bindplane Collector add-on is running. Set it up to send Home Assistant logs to Bindplane?"
+      },
+      "credentials": {
+        "title": "Connect to Bindplane",
+        "description": "With an API key, Home Assistant fetches your secret key and creates a ready-to-go configuration for you.",
+        "menu_options": {
+          "api_key": "Bindplane API key (recommended)",
+          "secret_key": "Secret key only"
+        }
+      },
+      "api_key": {
+        "title": "Bindplane API key",
+        "description": "Create an API key in Bindplane under **Settings → API Keys**.",
+        "data": {
+          "api_url": "Bindplane URL",
+          "api_key": "API key",
+          "project_id": "Project ID"
+        },
+        "data_description": {
+          "api_url": "Bindplane Cloud is https://app.bindplane.com. Use your own URL for self-hosted Bindplane.",
+          "project_id": "Only needed for scoped API keys (starting with bps_)."
+        }
+      },
+      "configuration": {
+        "title": "Choose a configuration",
+        "description": "Bindplane configurations decide where the collector sends data. Creating **{configuration}** adds an OpenTelemetry (OTLP) source that receives from Home Assistant and sends to the destinations you pick. You can change it later in Bindplane.",
+        "data": {
+          "configuration": "Configuration",
+          "destinations": "Destinations"
+        },
+        "data_description": {
+          "destinations": "Only used when creating the configuration. Leave empty to add destinations later in Bindplane."
+        }
+      },
+      "secret_key": {
+        "title": "Secret key",
+        "description": "Find it in Bindplane under **Install Agent**. Afterwards, attach a configuration with an OpenTelemetry (OTLP) source to the collector.",
+        "data": {
+          "endpoint": "OpAMP endpoint",
+          "secret_key": "Secret key"
+        }
+      },
+      "external": {
+        "title": "External collector",
+        "description": "The collector needs an OpenTelemetry (OTLP) source listening on HTTP.",
+        "data": {
+          "otlp_url": "OTLP/HTTP URL"
+        },
+        "data_description": {
+          "otlp_url": "For example http://192.168.1.20:4318"
+        }
+      }
+    },
+    "progress": {
+      "install_addon": "Installing the Bindplane Collector add-on. This can take a few minutes.",
+      "start_addon": "Starting the Bindplane Collector add-on."
+    },
+    "error": {
+      "invalid_auth": "Bindplane rejected the API key. Scoped keys (bps_) also need the project ID.",
+      "cannot_connect": "Could not reach Bindplane.",
+      "apply_failed": "Bindplane could not create the configuration: {error}"
+    },
+    "abort": {
+      "already_configured": "This collector is already set up.",
+      "addon_not_found": "Could not find the Bindplane Collector add-on in the add-on store.",
+      "addon_failed": "The Bindplane Collector add-on failed to install or start. Check the Supervisor logs.",
+      "addon_set_config_failed": "Could not save the Bindplane Collector add-on options.",
+      "reconfigure_successful": "Reconfigured. The collector is reconnecting to Bindplane."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "What to export",
+        "data": {
+          "level": "Minimum log level",
+          "exclude_loggers": "Excluded loggers",
+          "events": "Forwarded events",
+          "metrics": "Export metrics",
+          "metrics_exclude": "Entities excluded from metrics"
+        },
+        "data_description": {
+          "level": "Home Assistant's own logger level still applies first.",
+          "exclude_loggers": "Logger name prefixes to skip, e.g. homeassistant.components.recorder",
+          "events": "Event types sent as log records. state_changed is very chatty.",
+          "metrics": "Every minute, send numeric sensors and on/off entities as OpenTelemetry gauges."
+        }
+      }
+    }
+  },
+  "selector": {
+    "configuration": {
+      "options": {
+        "__create__": "Create or update home-assistant"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "records_exported": {
+        "name": "Records exported"
+      },
+      "records_dropped": {
+        "name": "Records dropped"
+      },
+      "metrics_exported": {
+        "name": "Metric data points exported"
+      },
+      "export_status": {
+        "name": "Export status",
+        "state": {
+          "ok": "OK",
+          "error": "Error",
+          "pending": "Pending"
+        }
+      },
+      "collector_status": {
+        "name": "Collector status",
+        "state": {
+          "disconnected": "Disconnected",
+          "connected": "Connected",
+          "error": "Error",
+          "component_failed": "Component failed",
+          "deleted": "Deleted",
+          "configuring": "Configuring",
+          "upgrading": "Upgrading",
+          "unknown": "Unknown"
+        }
+      },
+      "collector_configuration": {
+        "name": "Configuration"
+      },
+      "collector_version": {
+        "name": "Collector version"
+      }
+    }
+  },
+  "services": {
+    "flush": {
+      "name": "Flush",
+      "description": "Send buffered log records to the collector now."
+    },
+    "send_test": {
+      "name": "Send test record",
+      "description": "Emit a test log record so you can find it in your destination.",
+      "fields": {
+        "message": {
+          "name": "Message",
+          "description": "Body of the test record."
+        }
+      }
+    }
+  }
+}

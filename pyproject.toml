@@ -1,0 +1,16 @@
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+combine-as-imports = true
+known-first-party = ["custom_components"]
+section-order = ["future", "standard-library", "third-party", "homeassistant", "first-party", "local-folder"]
+
+[tool.ruff.lint.isort.sections]
+homeassistant = ["homeassistant", "pytest_homeassistant_custom_component"]

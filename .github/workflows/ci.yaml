@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements_test.txt ruff
+      - run: ruff check custom_components tests
+      - run: pytest
+
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: integration
+
+  addon-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: frenck/action-addon-linter@v2
+        with:
+          path: ./bindplane_collector
+
+  addon-build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [aarch64, amd64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/builder@master
+        with:
+          args: --test --${{ matrix.arch }} --target /data/bindplane_collector

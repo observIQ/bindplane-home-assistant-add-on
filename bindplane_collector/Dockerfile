@@ -1,0 +1,13 @@
+ARG BUILD_FROM
+FROM ${BUILD_FROM}
+
+ARG BUILD_ARCH
+ARG BUILD_VERSION
+RUN case "${BUILD_ARCH}" in aarch64) a=arm64 ;; *) a=amd64 ;; esac \
+    && mkdir -p /opt/bdot \
+    && curl -fsSL "https://github.com/observIQ/bindplane-otel-collector/releases/download/v${BUILD_VERSION}/observiq-otel-collector-v${BUILD_VERSION}-linux-${a}.tar.gz" \
+       | tar xz -C /opt/bdot \
+    && rm -rf /opt/bdot/install /opt/bdot/updater /opt/bdot/gpg-keys.tar.gz
+
+COPY rootfs /
+CMD ["/run.sh"]

@@ -1,0 +1,7 @@
+flush:
+send_test:
+  fields:
+    message:
+      example: Hello from Home Assistant
+      selector:
+        text:
