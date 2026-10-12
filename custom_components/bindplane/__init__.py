@@ -31,6 +31,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import BindplaneClient, BindplaneError
 from .const import (
+    ALL_EVENTS,
     CONF_AGENT_ID,
     CONF_API_KEY,
     CONF_API_URL,
@@ -126,7 +127,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: BindplaneConfigEntry) ->
     entry.async_on_unload(hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, exporter.flush))
 
     events = options.get(CONF_EVENTS, DEFAULT_EVENTS)
-    if MATCH_ALL in events:
+    if ALL_EVENTS in events:
         skip = set() if EVENT_STATE_CHANGED in events else {EVENT_STATE_CHANGED}
 
         @callback

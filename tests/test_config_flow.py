@@ -64,7 +64,7 @@ async def test_discovery_with_api_key_creates_configuration(
     )
     assert result["step_id"] == "configuration"
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"configuration": "__create__", "destinations": ["grafana"]}
+        result["flow_id"], {"configuration": "create-home-assistant", "destinations": ["grafana"]}
     )
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
@@ -194,10 +194,12 @@ async def test_missing_permission_on_apply_returns_to_api_key(
         result["flow_id"], {"api_url": "https://app.bindplane.com", "api_key": "bps_x", "project_id": "p1"}
     )
     assert result["step_id"] == "configuration"
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"configuration": "__create__"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"configuration": "create-home-assistant"}
+    )
     assert result["step_id"] == "api_key"
     assert result["errors"] == {"base": "missing_permission"}
-    assert result["description_placeholders"] == {"error": "missing permission WriteResources"}
+    assert result["description_placeholders"]["error"] == "missing permission WriteResources"
 
     aioclient_mock.clear_requests()
     aioclient_mock.get(f"{API}/secret-keys", json={"defaultSecretKey": "s3cret"})
@@ -209,7 +211,9 @@ async def test_missing_permission_on_apply_returns_to_api_key(
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"api_url": "https://app.bindplane.com", "api_key": "bps_better", "project_id": "p1"}
     )
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"configuration": "__create__"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"configuration": "create-home-assistant"}
+    )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"]["api_key"] == "bps_better"
 
@@ -242,7 +246,7 @@ async def test_change_api_key_from_configuration(hass: HomeAssistant, aioclient_
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"api_url": "https://app.bindplane.com", "api_key": "k"}
     )
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"configuration": "__change_api_key__"})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"configuration": "change-api-key"})
     assert result["step_id"] == "api_key" and not result["errors"]
 
 

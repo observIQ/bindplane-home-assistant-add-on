@@ -200,3 +200,7 @@ bindplane_collector/          Home Assistant add-on (collector + discovery)
 custom_components/bindplane/  Home Assistant integration (config flow, OTLP exporter, sensors)
 tests/                        pytest-homeassistant-custom-component tests
 ```
+
+## License
+
+[Apache 2.0](LICENSE)

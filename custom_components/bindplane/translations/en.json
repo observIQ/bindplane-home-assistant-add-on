@@ -39,7 +39,7 @@
           "project_id": "Project ID"
         },
         "data_description": {
-          "api_url": "Bindplane Cloud is https://app.bindplane.com. Use your own URL for self-hosted Bindplane.",
+          "api_url": "Bindplane Cloud is {cloud_url}. Use your own URL for self-hosted Bindplane.",
           "project_id": "Only needed for scoped API keys (starting with bps_)."
         }
       },
@@ -117,13 +117,13 @@
   "selector": {
     "configuration": {
       "options": {
-        "__create__": "Create or update home-assistant",
-        "__change_api_key__": "↩ Use a different API key"
+        "create-home-assistant": "Create or update home-assistant",
+        "change-api-key": "↩ Use a different API key"
       }
     },
     "events": {
       "options": {
-        "*": "All events (except state_changed)"
+        "all": "All events (except state_changed)"
       }
     }
   },

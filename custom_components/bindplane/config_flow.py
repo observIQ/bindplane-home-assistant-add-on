@@ -24,7 +24,6 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlow,
 )
-from homeassistant.const import MATCH_ALL
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -54,6 +53,7 @@ from .api import (
 from .const import (
     ADDON_NAME,
     ADDON_SLUG,
+    ALL_EVENTS,
     CHANGE_API_KEY,
     CONF_ADDON_SLUG,
     CONF_AGENT_ID,
@@ -274,7 +274,7 @@ class BindplaneConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="api_key",
             data_schema=self.add_suggested_values_to_schema(schema, suggested),
             errors={"base": error} if error else None,
-            description_placeholders={"error": detail},
+            description_placeholders={"error": detail, "cloud_url": DEFAULT_API_URL},
         )
 
     async def async_step_configuration(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -398,7 +398,7 @@ class BindplaneOptionsFlow(OptionsFlow):
                 vol.Optional(CONF_EXCLUDE, default=[]): TextSelector(TextSelectorConfig(multiple=True)),
                 vol.Optional(CONF_EVENTS, default=DEFAULT_EVENTS): SelectSelector(
                     SelectSelectorConfig(
-                        options=[MATCH_ALL, *SUGGESTED_EVENTS],
+                        options=[ALL_EVENTS, *SUGGESTED_EVENTS],
                         multiple=True,
                         custom_value=True,
                         translation_key="events",
