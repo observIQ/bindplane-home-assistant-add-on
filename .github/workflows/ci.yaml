@@ -41,6 +41,9 @@ jobs:
 
   addon-build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       matrix:
         include:
@@ -48,24 +51,46 @@ jobs:
             platform: linux/amd64
           - arch: aarch64
             platform: linux/arm64
+    env:
+      IMAGE: ghcr.io/observiq/${{ matrix.arch }}-bindplane-collector
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
+      - name: Build args
+        run: |
+          {
+            echo "VERSION=$(yq '.version' bindplane_collector/config.yaml)"
+            echo "BUILD_FROM=$(yq '.build_from.${{ matrix.arch }}' bindplane_collector/build.yaml)"
+          } >> "$GITHUB_ENV"
       - name: Build
         run: |
           docker buildx build bindplane_collector \
             --platform ${{ matrix.platform }} \
-            --build-arg BUILD_FROM=$(yq '.build_from.${{ matrix.arch }}' bindplane_collector/build.yaml) \
+            --build-arg BUILD_FROM="$BUILD_FROM" \
             --build-arg BUILD_ARCH=${{ matrix.arch }} \
-            --build-arg BUILD_VERSION=$(yq '.version' bindplane_collector/config.yaml) \
-            --tag bindplane-collector:test \
+            --build-arg BUILD_VERSION="$VERSION" \
+            --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \
+            --label org.opencontainers.image.version="$VERSION" \
+            --label io.hass.type=addon \
+            --label io.hass.arch=${{ matrix.arch }} \
+            --label io.hass.version="$VERSION" \
+            --tag "$IMAGE:$VERSION" \
             --load
       - name: Smoke test
         run: |
-          docker run --rm --platform ${{ matrix.platform }} --entrypoint sh bindplane-collector:test -c '
+          docker run --rm --platform ${{ matrix.platform }} --entrypoint sh "$IMAGE:$VERSION" -c '
             set -e
             /opt/bdot/observiq-otel-collector --version
             journalctl --version
             for c in bashio jq paste curl; do command -v "$c"; done
             test -x /run.sh'
+      - name: Publish
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          if docker manifest inspect "$IMAGE:$VERSION" > /dev/null 2>&1; then
+            echo "$IMAGE:$VERSION already published; bump the version in bindplane_collector/config.yaml to publish changes."
+          else
+            docker push "$IMAGE:$VERSION"
+          fi
