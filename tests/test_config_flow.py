@@ -1,12 +1,13 @@
 """Tests for the Bindplane config flow."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from homeassistant.config_entries import SOURCE_HASSIO, SOURCE_USER
 from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.data_entry_flow import EVENT_DATA_ENTRY_FLOW_PROGRESS_UPDATE, FlowResultType
 from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
@@ -141,14 +142,22 @@ async def test_user_installs_and_starts_addon(hass: HomeAssistant, aioclient_moc
     aioclient_mock.post(f"{API}/apply", json={"updates": [{"status": "created"}]})
     aioclient_mock.post(f"{API}/rollouts/home-assistant/start", json={})
     addon.async_get_addon_info.return_value.state = AddonState.NOT_INSTALLED
-    addon.async_install_addon = AsyncMock(
-        side_effect=lambda: setattr(addon.async_get_addon_info.return_value, "state", AddonState.NOT_RUNNING)
-    )
+
+    async def install():
+        await asyncio.sleep(0)
+        addon.async_get_addon_info.return_value.state = AddonState.NOT_RUNNING
+
+    addon.async_install_addon = AsyncMock(side_effect=install)
     addon.async_start_addon = AsyncMock()
     addon.async_get_addon_discovery_info = AsyncMock(return_value=DISCOVERY.config)
     supervisor = MagicMock()
     supervisor.store.addons_list = AsyncMock(side_effect=[[], [MagicMock(slug=DISCOVERY.slug)]])
     supervisor.store.add_repository = AsyncMock()
+    pull = MagicMock(progress=42.0, done=False, child_jobs=[])
+    install = MagicMock(reference=DISCOVERY.slug, progress=0.0, done=False, child_jobs=[pull])
+    supervisor.jobs.info = AsyncMock(return_value=MagicMock(jobs=[install]))
+    progress = []
+    hass.bus.async_listen(EVENT_DATA_ENTRY_FLOW_PROGRESS_UPDATE, lambda e: progress.append(e.data["progress"]))
 
     with (
         patch("custom_components.bindplane.config_flow.is_hassio", return_value=True),
@@ -158,6 +167,9 @@ async def test_user_installs_and_starts_addon(hass: HomeAssistant, aioclient_moc
         assert result["type"] is FlowResultType.FORM and result["step_id"] == "user"
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
         await hass.async_block_till_done()
+        result = await hass.config_entries.flow.async_configure(result["flow_id"])
+
+    assert progress == [0.42]
 
     assert result["type"] is FlowResultType.FORM and result["step_id"] == "api_key"
     supervisor.store.add_repository.assert_awaited_once()

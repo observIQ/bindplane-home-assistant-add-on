@@ -108,7 +108,14 @@ Already running a collector somewhere else? Expand **Advanced: use my own collec
     "service.name": "home-assistant",
     "service.version": "2026.10.1",
     "service.instance.id": "6c1f…",       // HA instance UUID
-    "host.name": "homeassistant"
+    "host.name": "homeassistant",
+    "host.arch": "arm64",
+    "os.type": "linux",
+    "os.version": "6.12.…",
+    "homeassistant.location_name": "Home",
+    "homeassistant.time_zone": "America/Detroit",
+    "homeassistant.country": "US",
+    "homeassistant.installation_type": "Home Assistant OS"
   },
   "scope": { "name": "homeassistant.components.zha" },  // logger name
   "severityText": "ERROR",
@@ -117,6 +124,7 @@ Already running a collector somewhere else? Expand **Advanced: use my own collec
     "code.file.path": "/usr/src/homeassistant/homeassistant/components/zha/…",
     "code.line.number": 142,
     "code.function.name": "async_update",
+    "thread.id": 140211…,
     "thread.name": "MainThread",
     "exception.type": "TimeoutError",
     "exception.stacktrace": "Traceback (most recent call last): …"
@@ -124,7 +132,31 @@ Already running a collector somewhere else? Expand **Advanced: use my own collec
 }
 ```
 
-Forwarded events have `event.name` set to the event type and their data flattened into `event.data.*` attributes.
+Attributes follow OpenTelemetry semantic conventions where one exists (`code.*`, `thread.*`, `exception.*`, `container.name`, `user.id`, `error.type`, …), with Home Assistant specifics under `homeassistant.*`. The same names are used on logs, metrics and traces.
+
+Anything about an entity, on any signal, carries:
+
+| Attribute | Notes |
+|---|---|
+| `homeassistant.entity.id`, `.domain`, `.object_id`, `.name`, `.device_class` | |
+| `homeassistant.entity.platform`, `.unique_id`, `.labels` | from the entity registry |
+| `homeassistant.device.id`, `.name`, `.manufacturer`, `.model`, `.sw_version` | from the device registry |
+| `homeassistant.area.id`, `.name`, `homeassistant.floor.name` | entity's area, or its device's |
+
+Add-on logs and metrics carry `container.name` (`addon_<slug>`) and `homeassistant.addon.slug`, `.name`, `.version`, `.version_latest`, `.update_available`, `.repository`.
+
+Logs and events emitted while an automation or script runs carry that run's `traceId` and root `spanId`, plus `homeassistant.step.path`, so they link to its trace.
+
+Forwarded events set the record's event name to the event type and add:
+
+| Attribute | Notes |
+|---|---|
+| `homeassistant.event.type`, `homeassistant.event.origin` | |
+| `homeassistant.context.id`, `homeassistant.context.parent_id`, `user.id` | |
+| `homeassistant.state.old`, `homeassistant.state.new` | `state_changed` only |
+| `homeassistant.state.attributes.*` | new state attributes |
+| `homeassistant.state.old_attributes.*` | old attribute values that changed |
+| `homeassistant.event.data.*` | any other event data |
 
 ## Metrics
 
@@ -135,15 +167,15 @@ Sent once a minute, and right after Home Assistant starts.
 | `homeassistant.sensor.<device_class>` | numeric sensor state | `.value` without a device class; unit from the entity |
 | `homeassistant.<domain>.value` | numeric state of any other entity (`number`, `counter`, `input_number`, …) | |
 | `homeassistant.<domain>.on` | `1` / `0` | anything that is `on`/`off` |
-| `homeassistant.entity.state` | `1`, with a `state` attribute | text states like `heat`, `home`, `playing`, `open` |
+| `homeassistant.entity.state` | `1`, with a `homeassistant.state` attribute | text states like `heat`, `home`, `playing`, `open` |
 | `homeassistant.<domain>.attribute.<name>` | numeric state attributes | e.g. `climate.attribute.current_temperature`, `light.attribute.brightness`, battery levels |
 | `homeassistant.entity.available` | `1` / `0` | `0` when `unavailable` |
 | `homeassistant.entity.last_changed` | Unix seconds | |
 | `homeassistant.entity.state_changes` | cumulative count | since the integration started |
 | `container.cpu.utilization`, `container.memory.*`, `container.network.io`, `container.disk.io` | | Home Assistant, Supervisor and every running add-on, labelled by `container.name` |
-| `system.filesystem.usage` | bytes, `state` = `used`/`free` | host disk |
+| `system.filesystem.usage` | bytes, `system.filesystem.state` = `used`/`free` | host disk |
 
-Entity data points carry `entity_id`, `domain`, `friendly_name` and `area`. Need Prometheus-style names for existing dashboards? Rename them in Bindplane with a processor.
+Entity data points carry the entity attributes above. Need Prometheus-style names for existing dashboards? Rename them in Bindplane with a processor.
 
 ## Traces
 
@@ -151,10 +183,10 @@ Each finished automation or script run is one trace. The trace ID is the run ID 
 
 | Span | Attributes |
 |---|---|
-| `automation: <alias>` / `script: <alias>` (root) | `entity_id`, `homeassistant.trigger`, `homeassistant.script_execution` (`finished`, `failed_conditions`, `error`, …), `homeassistant.context.id` |
-| `trigger/0`, `condition/0`, `action/1`, `action/1/choose/0/sequence/0`, … | `homeassistant.step.result.*`, `homeassistant.step.variables.*` |
+| `automation: <alias>` / `script: <alias>` (root) | entity attributes, `homeassistant.trace.run_id`, `.domain`, `.item_id`, `.alias`, `.trigger`, `.script_execution` (`finished`, `failed_conditions`, `error`, …), `.last_step`, `homeassistant.context.id`, `.parent_id`, `user.id` |
+| `trigger/0`, `condition/0`, `action/1`, `action/1/choose/0/sequence/0`, … | `homeassistant.step.path`, `homeassistant.step.result.*`, `homeassistant.step.variables.*`, `homeassistant.step.child_run_id` |
 
-Steps nest by their path, and a failed step or run has an error status.
+Steps nest by their path. A step that calls a script links to the script's trace. A failed step or run has an error status and `error.type`.
 
 ## Entities and actions
 

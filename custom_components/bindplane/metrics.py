@@ -9,14 +9,13 @@ import time
 from typing import Any
 
 from aiohasupervisor import SupervisorError
-from aiohasupervisor.models import AddonState
+from aiohasupervisor.models import AddonState, InstalledAddon
 
 from homeassistant.components.hassio import get_supervisor_client
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
-from homeassistant.helpers import area_registry as ar, device_registry as dr, entity_registry as er
 
-from .exporter import attr
+from .exporter import attr, entity_attrs
 
 ON_OFF = {"on": 1.0, "off": 0.0}
 SKIP_ATTRIBUTES = {"supported_features"}
@@ -72,7 +71,6 @@ class MetricsCollector:
 
     def snapshot(self) -> Metrics:
         """Return data points for every entity."""
-        entities, devices, areas = er.async_get(self._hass), dr.async_get(self._hass), ar.async_get(self._hass)
         now = str(time.time_ns())
         metrics: Metrics = {}
 
@@ -81,17 +79,7 @@ class MetricsCollector:
         for state in self._hass.states.async_all():
             if state.entity_id in self._exclude:
                 continue
-            attrs = [
-                attr("entity_id", state.entity_id),
-                attr("domain", state.domain),
-                attr("friendly_name", state.name),
-            ]
-            if entry := entities.async_get(state.entity_id):
-                area_id = entry.area_id
-                if not area_id and entry.device_id and (device := devices.async_get(entry.device_id)):
-                    area_id = device.area_id
-                if area_id and (area := areas.async_get_area(area_id)):
-                    attrs.append(attr("area", area.name))
+            attrs = entity_attrs(self._hass, state.entity_id)
 
             add("homeassistant.entity.available", float(state.state != STATE_UNAVAILABLE), attrs)
             add("homeassistant.entity.last_changed", state.last_changed_timestamp, attrs, "s")
@@ -110,12 +98,25 @@ class MetricsCollector:
             elif state.state in ON_OFF:
                 add(f"homeassistant.{state.domain}.on", ON_OFF[state.state], attrs)
             elif state.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
-                add("homeassistant.entity.state", 1.0, [*attrs, attr("state", state.state)])
+                add("homeassistant.entity.state", 1.0, [*attrs, attr("homeassistant.state", state.state)])
 
             for key, raw in state.attributes.items():
                 if isinstance(raw, (int, float)) and key not in SKIP_ATTRIBUTES and (value := _number(raw)) is not None:
                     add(f"homeassistant.{state.domain}.attribute.{key}", value, attrs)
         return metrics
+
+
+def addon_attrs(addon: InstalledAddon) -> list[dict[str, Any]]:
+    """Describe an add-on and its container."""
+    return [
+        attr("container.name", f"addon_{addon.slug}"),
+        attr("homeassistant.addon.slug", addon.slug),
+        attr("homeassistant.addon.name", addon.name),
+        *([attr("homeassistant.addon.version", addon.version)] if addon.version else []),
+        attr("homeassistant.addon.version_latest", addon.version_latest),
+        attr("homeassistant.addon.update_available", addon.update_available),
+        attr("homeassistant.addon.repository", addon.repository),
+    ]
 
 
 async def supervisor_metrics(hass: HomeAssistant) -> Metrics:
@@ -127,20 +128,19 @@ async def supervisor_metrics(hass: HomeAssistant) -> Metrics:
     add = partial(_add, metrics, now)
 
     containers = [
-        ("homeassistant", "Home Assistant", client.homeassistant.stats),
-        ("supervisor", "Supervisor", client.supervisor.stats),
+        ([attr("container.name", "homeassistant")], client.homeassistant.stats),
+        ([attr("container.name", "hassio_supervisor")], client.supervisor.stats),
     ]
     containers += [
-        (a.slug, a.name, partial(client.addons.addon_stats, a.slug))
+        (addon_attrs(a), partial(client.addons.addon_stats, a.slug))
         for a in await client.addons.list()
         if a.state == AddonState.STARTED
     ]
-    for slug, name, stats_fn in containers:
+    for attrs, stats_fn in containers:
         try:
             stats = await stats_fn()
         except SupervisorError:
             continue
-        attrs = [attr("container.name", slug), attr("container.display_name", name)]
         add("container.cpu.utilization", stats.cpu_percent / 100, attrs, "1")
         add("container.memory.usage", stats.memory_usage, attrs, "By")
         add("container.memory.limit", stats.memory_limit, attrs, "By")
@@ -154,8 +154,8 @@ async def supervisor_metrics(hass: HomeAssistant) -> Metrics:
         host = await client.host.info()
     except SupervisorError:
         return metrics
-    add("system.filesystem.usage", host.disk_used * 1e9, [attr("state", "used")], "By")
-    add("system.filesystem.usage", host.disk_free * 1e9, [attr("state", "free")], "By")
+    add("system.filesystem.usage", host.disk_used * 1e9, [attr("system.filesystem.state", "used")], "By")
+    add("system.filesystem.usage", host.disk_free * 1e9, [attr("system.filesystem.state", "free")], "By")
     return metrics
 
 

@@ -20,11 +20,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .exporter import OtlpHandler, attr
+from .metrics import addon_attrs
 
 _LOGGER = logging.getLogger(__name__)
 
 LINE = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}) (\S*) ([^\s\[:]+)(?:\[(\d+)\])?: (.*)$")
-LEVEL = re.compile(r"\b(TRACE|DEBUG|INFO|NOTICE|WARN|WARNING|ERROR|ERR|CRITICAL|CRIT|FATAL)\b", re.IGNORECASE)
+LEVELS = "TRACE|DEBUG|INFO|NOTICE|WARN|WARNING|ERROR|ERR|CRITICAL|CRIT|FATAL"
+LEVEL = re.compile(rf"\b(?:({LEVELS})\b|(?i:({LEVELS}))[\]:])")
 SEVERITY = {
     "TRACE": (1, "TRACE"),
     "DEBUG": (5, "DEBUG"),
@@ -70,12 +72,12 @@ def log_record(entry: Entry, source: str, attrs: list[dict[str, Any]]) -> tuple[
         "body": {"stringValue": message},
         "attributes": [
             *attrs,
-            attr("syslog.identifier", entry.identifier),
+            attr("homeassistant.syslog.identifier", entry.identifier),
             *([attr("process.pid", int(entry.pid))] if entry.pid else []),
         ],
     }
     if level := LEVEL.search(message[:120]):
-        record["severityNumber"], record["severityText"] = SEVERITY[level.group(1).upper()]
+        record["severityNumber"], record["severityText"] = SEVERITY[level[level.lastindex].upper()]
     return f"homeassistant.supervisor.{source}", record
 
 
@@ -93,6 +95,8 @@ class SupervisorLogs:
         }
         self._since = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
         self._tasks: dict[str, asyncio.Task] = {}
+        self._last: dict[str, tuple[str, set[str]]] = {}
+        self._stopped = False
 
     async def async_refresh(self, *_: Any) -> None:
         """Follow Supervisor, the host and every running add-on."""
@@ -106,15 +110,10 @@ class SupervisorLogs:
             _LOGGER.debug("Could not list add-ons: %s", err)
         else:
             for addon in addons:
-                if addon.state == AddonState.STARTED:
-                    streams[f"addon.{addon.slug}"] = (
-                        f"/addons/{addon.slug}/logs/follow",
-                        [
-                            attr("container.name", f"addon_{addon.slug}"),
-                            attr("homeassistant.addon.slug", addon.slug),
-                            attr("homeassistant.addon.name", addon.name),
-                        ],
-                    )
+                if addon.state == AddonState.STARTED and not addon.slug.endswith("bindplane_collector"):
+                    streams[f"addon.{addon.slug}"] = (f"/addons/{addon.slug}/logs/follow", addon_attrs(addon))
+        if self._stopped:
+            return
         for source in set(self._tasks) - set(streams):
             self._tasks.pop(source).cancel()
         for source, (path, attrs) in streams.items():
@@ -125,27 +124,33 @@ class SupervisorLogs:
 
     def stop(self) -> None:
         """Stop following logs."""
+        self._stopped = True
         for task in self._tasks.values():
             task.cancel()
         self._tasks.clear()
 
     async def _follow(self, source: str, path: str, attrs: list[dict[str, Any]]) -> None:
-        last = self._since
-        seen: set[str] = set()
+        threshold = self._handler.level // 10 * 4 + 1
         while True:
             pending: Entry | None = None
+            prev: Entry | None = None
+            buf = b""
 
             def emit() -> None:
-                nonlocal pending, last, seen
+                nonlocal pending, prev
                 if pending is None:
                     return
+                last, seen = self._last.get(source, (self._since, set()))
                 key = "\n".join(pending.lines)
                 if pending.timestamp > last or (pending.timestamp == last and key not in seen):
                     if pending.timestamp > last:
                         last, seen = pending.timestamp, set()
                     seen.add(key)
-                    self._handler.add(log_record(pending, source, attrs))
-                pending = None
+                    self._last[source] = (last, seen)
+                    record = log_record(pending, source, attrs)
+                    if record[1].get("severityNumber", 9) >= threshold:
+                        self._handler.add(record)
+                prev, pending = pending, None
 
             try:
                 async with self._session.get(
@@ -158,18 +163,25 @@ class SupervisorLogs:
                     content = resp.content
                     while True:
                         try:
-                            raw = await asyncio.wait_for(content.readline(), FLUSH_AFTER)
+                            chunk = await asyncio.wait_for(content.readany(), FLUSH_AFTER if pending else None)
                         except TimeoutError:
                             emit()
                             continue
-                        if not raw:
+                        if not chunk:
                             break
-                        line = raw.decode(errors="replace").rstrip("\n")
-                        if entry := parse_line(line):
-                            emit()
-                            pending = entry
-                        elif pending is not None:
-                            pending.lines.append(line)
+                        *raws, buf = (buf + chunk).split(b"\n")
+                        for raw in raws:
+                            line = raw.decode(errors="replace")
+                            if entry := parse_line(line):
+                                emit()
+                                pending = entry
+                            elif pending is not None:
+                                pending.lines.append(line)
+                            elif prev is not None:
+                                pending = Entry(prev.timestamp, prev.identifier, prev.pid, [line])
+                    if buf and (entry := parse_line(buf.decode(errors="replace"))):
+                        emit()
+                        pending = entry
                     emit()
             except (aiohttp.ClientError, TimeoutError) as err:
                 emit()

@@ -4,10 +4,23 @@ import json
 import logging
 import sys
 
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_STATE_CHANGED
+from homeassistant.core import Context, Event, HomeAssistant
+from homeassistant.helpers import area_registry as ar, device_registry as dr, entity_registry as er
+from homeassistant.helpers.trace import trace_id_cv
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
-from custom_components.bindplane.exporter import Exporter, OtlpHandler, attr, flatten, log_record, payload
+from custom_components.bindplane.exporter import (
+    Exporter,
+    OtlpHandler,
+    attr,
+    event_record,
+    flatten,
+    log_record,
+    payload,
+    span_id,
+)
 
 URL = "http://collector:4318"
 
@@ -95,3 +108,49 @@ async def test_flush_drops_rejected_batch(hass: HomeAssistant, aioclient_mock: A
     aioclient_mock.post(f"{URL}/v1/logs", status=400, text="bad")
     await exporter.flush()
     assert exporter.dropped == 1 and not exporter._pending and exporter.last_error == "HTTP 400: bad"
+
+
+async def test_state_changed_event_record(hass: HomeAssistant):
+    area = ar.async_get(hass).async_create("Kitchen")
+    config_entry = MockConfigEntry(domain="tplink")
+    config_entry.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=config_entry.entry_id, identifiers={("tplink", "1")}, name="Plug", manufacturer="TP-Link"
+    )
+    dr.async_get(hass).async_update_device(device.id, area_id=area.id)
+    er.async_get(hass).async_get_or_create(
+        "switch", "tplink", "1", suggested_object_id="plug", device_id=device.id, config_entry=config_entry
+    )
+    hass.states.async_set("switch.plug", "off", {"friendly_name": "Plug", "power": 1})
+    old = hass.states.get("switch.plug")
+    hass.states.async_set("switch.plug", "on", {"friendly_name": "Plug", "power": 5})
+    event = Event(
+        EVENT_STATE_CHANGED,
+        {"entity_id": "switch.plug", "old_state": old, "new_state": hass.states.get("switch.plug")},
+        context=Context(user_id="u1"),
+    )
+    scope, record = event_record(event, hass)
+    a = attrs(record)
+    assert scope == "homeassistant.events" and record["eventName"] == "state_changed"
+    assert record["body"]["stringValue"] == "switch.plug: off → on"
+    assert a["homeassistant.entity.id"] == "switch.plug"
+    assert a["homeassistant.entity.domain"] == "switch" and a["homeassistant.entity.object_id"] == "plug"
+    assert a["homeassistant.entity.platform"] == "tplink"
+    assert a["homeassistant.device.name"] == "Plug" and a["homeassistant.device.manufacturer"] == "TP-Link"
+    assert a["homeassistant.area.name"] == "Kitchen"
+    assert a["homeassistant.state.old"] == "off" and a["homeassistant.state.new"] == "on"
+    assert a["homeassistant.state.attributes.power"] == "5"
+    assert a["homeassistant.state.old_attributes.power"] == "1"
+    assert "homeassistant.state.old_attributes.friendly_name" not in a
+    assert a["user.id"] == "u1"
+    assert not [k for k in a if k.startswith("homeassistant.event.data")]
+
+
+def test_log_record_links_to_running_trace():
+    assert "traceId" not in log_record(make_record())[1]
+    token = trace_id_cv.set(("automation.porch", "a" * 32))
+    try:
+        _, record = log_record(make_record())
+    finally:
+        trace_id_cv.reset(token)
+    assert record["traceId"] == "a" * 32 and record["spanId"] == span_id("a" * 32, "")

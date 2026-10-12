@@ -43,7 +43,7 @@ async def test_logs_and_events_are_exported(hass: HomeAssistant, aioclient_mock:
     assert by_body["Hello world"][0] == "homeassistant.components.demo"
     scope, event = by_body["custom_event"]
     assert scope == "homeassistant.events"
-    assert {"key": "event.data.answer", "value": {"intValue": "42"}} in event["attributes"]
+    assert {"key": "homeassistant.event.data.answer", "value": {"intValue": "42"}} in event["attributes"]
     logs_call = next(c for c in aioclient_mock.mock_calls if str(c[1]).endswith("/v1/logs"))
     resource = json.loads(logs_call[2])["resourceLogs"][0]["resource"]["attributes"]
     assert {"key": "service.name", "value": {"stringValue": "home-assistant"}} in resource

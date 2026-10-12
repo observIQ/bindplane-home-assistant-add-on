@@ -39,6 +39,14 @@ def test_parse_and_convert():
     assert attrs(record)["process.pid"] == "42"
     _, plain = log_record(parse_line("2026-10-12 17:39:08.123 host kernel: eth0 link up"), "host", [])
     assert "severityText" not in plain and "process.pid" not in attrs(plain)
+    for message, level in [
+        ("no error found", None),
+        ("Recovered from previous error, now INFO ok", "INFO"),
+        ("[12:00:00] info: Starting", "INFO"),
+        ("2026-10-12 WARNING (MainThread) slow", "WARNING"),
+    ]:
+        _, record = log_record(parse_line(f"2026-10-12 17:39:08.123 h a: {message}"), "host", [])
+        assert record.get("severityText") == level, message
 
 
 async def test_streams_exported(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, monkeypatch):
@@ -52,6 +60,7 @@ async def test_streams_exported(hass: HomeAssistant, aioclient_mock: AiohttpClie
                 f"{ts(5)} ha addon_core_mosquitto[7]: [WARN] client timeout",
                 "Traceback line",
                 f"{ts(6)} ha addon_core_mosquitto[7]: info: connected",
+                f"{ts(7)} ha addon_core_mosquitto[7]: debug: below threshold",
             ]
         ),
     )
@@ -62,7 +71,13 @@ async def test_streams_exported(hass: HomeAssistant, aioclient_mock: AiohttpClie
     mosquitto = MagicMock(slug="core_mosquitto", state=AddonState.STARTED)
     mosquitto.name = "Mosquitto broker"
     client = MagicMock()
-    client.addons.list = AsyncMock(return_value=[mosquitto, MagicMock(slug="stopped_one", state=AddonState.STOPPED)])
+    client.addons.list = AsyncMock(
+        return_value=[
+            mosquitto,
+            MagicMock(slug="stopped_one", state=AddonState.STOPPED),
+            MagicMock(slug="local_bindplane_collector", state=AddonState.STARTED),
+        ]
+    )
     with (
         patch("custom_components.bindplane.is_hassio", return_value=True),
         patch("custom_components.bindplane.supervisor_logs.get_supervisor_client", return_value=client),
@@ -91,7 +106,8 @@ async def test_streams_exported(hass: HomeAssistant, aioclient_mock: AiohttpClie
         assert attrs(warn)["homeassistant.addon.name"] == "Mosquitto broker"
         assert attrs(warn)["container.name"] == "addon_core_mosquitto"
         assert bodies["info: connected"][1]["severityText"] == "INFO"
+        assert "debug: below threshold" not in bodies
         assert bodies["Supervisor ok"][0] == "homeassistant.supervisor.supervisor"
         assert bodies["eth0 up"][0] == "homeassistant.supervisor.host"
-        assert not [c for c in aioclient_mock.mock_calls if "stopped_one" in str(c[1])]
+        assert not [c for c in aioclient_mock.mock_calls if "stopped_one" in str(c[1]) or "collector/" in str(c[1])]
         assert await hass.config_entries.async_unload(entry.entry_id)

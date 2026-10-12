@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-import hashlib
 from typing import Any
 
 from homeassistant.components.trace.models import RestoredTrace
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
-from .exporter import attr, flatten
+from .exporter import attr, entity_attrs, flatten, span_id as _span_id
 
 TRACE_DATA = "trace"
 STATUS_ERROR = 2
@@ -21,11 +20,7 @@ def _ns(ts: datetime) -> str:
     return str(int(ts.timestamp() * 1e9))
 
 
-def _span_id(run_id: str, key: str) -> str:
-    return hashlib.sha256(f"{run_id}/{key}".encode()).hexdigest()[:16]
-
-
-def run_spans(run: dict[str, Any], entity_id: str | None = None) -> list[dict[str, Any]]:
+def run_spans(run: dict[str, Any], entity: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Convert a finished automation or script trace into spans."""
     run_id = run["run_id"]
     config = run.get("config") or {}
@@ -41,20 +36,29 @@ def run_spans(run: dict[str, Any], entity_id: str | None = None) -> list[dict[st
         "startTimeUnixNano": _ns(start),
         "endTimeUnixNano": _ns(finish),
         "attributes": [
-            attr("homeassistant.domain", run["domain"]),
-            attr("homeassistant.item_id", run["item_id"]),
-            attr("homeassistant.script_execution", execution or ""),
-            attr("homeassistant.last_step", run.get("last_step") or ""),
-            attr("homeassistant.context.id", run["context"].id),
-            *([attr("homeassistant.context.user_id", run["context"].user_id)] if run["context"].user_id else []),
-            *([attr("entity_id", entity_id)] if entity_id else []),
+            *flatten(
+                "homeassistant",
+                {
+                    "trace.run_id": run_id,
+                    "trace.domain": run["domain"],
+                    "trace.item_id": run["item_id"],
+                    "trace.alias": config.get("alias"),
+                    "trace.script_execution": execution,
+                    "trace.last_step": run.get("last_step"),
+                    "context.id": run["context"].id,
+                    "context.parent_id": run["context"].parent_id,
+                },
+            ),
+            *([attr("user.id", run["context"].user_id)] if run["context"].user_id else []),
+            *(entity or []),
         ],
     }
     for element in run.get("trace", {}).get("trigger/0", []):
         if description := ((element.get("changed_variables") or {}).get("trigger") or {}).get("description"):
-            root["attributes"].append(attr("homeassistant.trigger", description))
+            root["attributes"].append(attr("homeassistant.trace.trigger", description))
     if run.get("error") or execution in FAILED:
         root["status"] = {"code": STATUS_ERROR, "message": run.get("error") or execution}
+        root["attributes"].append(attr("error.type", execution or "error"))
 
     steps = sorted(
         (
@@ -89,9 +93,11 @@ def run_spans(run: dict[str, Any], entity_id: str | None = None) -> list[dict[st
             ],
         }
         if child := element.get("child_id"):
-            span["attributes"].append(attr("homeassistant.child_run_id", child["run_id"]))
+            span["attributes"].append(attr("homeassistant.step.child_run_id", child["run_id"]))
+            span["links"] = [{"traceId": child["run_id"], "spanId": _span_id(child["run_id"], "")}]
         if error := element.get("error"):
             span["status"] = {"code": STATUS_ERROR, "message": error}
+            span["attributes"].append(attr("error.type", "error"))
         spans.append(span)
     return spans
 
@@ -119,11 +125,11 @@ class TraceCollector:
         new = [run for run in finished if run["run_id"] not in self._seen]
         self._seen = {run["run_id"] for run in finished}
         entities = er.async_get(self._hass)
-        return [
-            span
-            for run in new
-            for span in run_spans(run, entities.async_get_entity_id(run["domain"], run["domain"], run["item_id"]))
-        ]
+        spans = []
+        for run in new:
+            entity_id = entities.async_get_entity_id(run["domain"], run["domain"], run["item_id"])
+            spans += run_spans(run, entity_attrs(self._hass, entity_id) if entity_id else None)
+        return spans
 
 
 def traces_payload(resource: list[dict[str, Any]], spans: list[dict[str, Any]]) -> dict[str, Any]:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import timedelta
 import logging
+import platform
 import socket
 from typing import Any
 
@@ -26,6 +27,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.hassio import is_hassio
 from homeassistant.helpers.instance_id import async_get as async_get_instance_id
 from homeassistant.helpers.start import async_at_started
+from homeassistant.helpers.system_info import async_get_system_info
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -48,7 +50,7 @@ from .const import (
     DEFAULT_LEVEL,
     DOMAIN,
 )
-from .exporter import Exporter, OtlpHandler, attr
+from .exporter import Exporter, OtlpHandler, attr, flatten
 from .metrics import MetricsCollector, metrics_payload, supervisor_metrics
 from .supervisor_logs import SupervisorLogs
 from .traces import TraceCollector, traces_payload
@@ -103,7 +105,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: BindplaneConfigEntry) ->
         attr("service.version", HA_VERSION),
         attr("service.instance.id", await async_get_instance_id(hass)),
         attr("host.name", socket.gethostname()),
-        attr("home_assistant.location_name", hass.config.location_name),
+        attr("host.arch", {"x86_64": "amd64", "aarch64": "arm64"}.get(platform.machine(), platform.machine())),
+        attr("os.type", platform.system().lower()),
+        attr("os.version", platform.release()),
+        *flatten(
+            "homeassistant",
+            {
+                "location_name": hass.config.location_name,
+                "time_zone": hass.config.time_zone,
+                "country": hass.config.country,
+                "installation_type": (await async_get_system_info(hass)).get("installation_type"),
+            },
+        ),
     ]
     options = entry.options
     handler = OtlpHandler(logging.getLevelName(options.get(CONF_LEVEL, DEFAULT_LEVEL)), options.get(CONF_EXCLUDE, []))

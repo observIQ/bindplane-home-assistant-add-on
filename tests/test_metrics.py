@@ -35,7 +35,7 @@ def set_states(hass):
 
 def values(metrics, name, kind=GAUGE):
     return {
-        next(a["value"]["stringValue"] for a in p["attributes"] if a["key"] == "entity_id"): p.get(
+        next(a["value"]["stringValue"] for a in p["attributes"] if a["key"] == "homeassistant.entity.id"): p.get(
             "asDouble", p.get("asInt")
         )
         for (n, _, k), points in metrics.items()
@@ -58,7 +58,7 @@ async def test_snapshot(hass: HomeAssistant):
 
     [temp] = metrics[("homeassistant.sensor.temperature", "°C", GAUGE)]
     assert temp["asDouble"] == 21.5
-    assert attr("area", "Den") in temp["attributes"]
+    assert attr("homeassistant.area.name", "Den") in temp["attributes"]
     assert values(metrics, "homeassistant.sensor.power") == {"sensor.power": 130.0}
     assert values(metrics, "homeassistant.binary_sensor.on") == {"binary_sensor.door": 1.0}
     assert values(metrics, "homeassistant.light.attribute.brightness") == {"light.kitchen": 200.0}
@@ -100,7 +100,7 @@ async def test_supervisor_metrics(hass: HomeAssistant):
 
     cpu = metrics[("container.cpu.utilization", "1", GAUGE)]
     names = [next(a["value"]["stringValue"] for a in p["attributes"] if a["key"] == "container.name") for p in cpu]
-    assert names == ["homeassistant", "supervisor", "core_mosquitto"]
+    assert names == ["homeassistant", "hassio_supervisor", "addon_core_mosquitto"]
     assert cpu[0]["asDouble"] == 0.125
     assert len(metrics[("container.network.io", "By", SUM)]) == 6
     assert [p["asDouble"] for p in metrics[("system.filesystem.usage", "By", GAUGE)]] == [10e9, 22e9]

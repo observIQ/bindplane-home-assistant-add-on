@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from aiohasupervisor import SupervisorError
-from aiohasupervisor.models import StoreAddRepository
+from aiohasupervisor.models import Job, StoreAddRepository
 import voluptuous as vol
 
 from homeassistant.components.hassio import (
@@ -99,6 +99,11 @@ PASSWORD = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
 URL = TextSelector(TextSelectorConfig(type=TextSelectorType.URL))
 
 
+def job_progress(job: Job) -> float:
+    """Highest progress of a running Supervisor job or its children."""
+    return max([job.progress, *(job_progress(c) for c in job.child_jobs if not c.done)])
+
+
 class BindplaneConfigFlow(ConfigFlow, domain=DOMAIN):
     """Set up Bindplane."""
 
@@ -188,9 +193,20 @@ class BindplaneConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_install_addon(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Install the add-on."""
-        return await self._async_addon_progress(
-            "install_addon", self._addon_manager().async_install_addon, "start_addon"
-        )
+        return await self._async_addon_progress("install_addon", self._async_install_addon, "start_addon")
+
+    async def _async_install_addon(self) -> None:
+        install = self.hass.async_create_task(self._addon_manager().async_install_addon())
+        jobs = get_supervisor_client(self.hass).jobs
+        while not install.done():
+            try:
+                running = [j for j in (await jobs.info()).jobs if j.reference == self._addon_slug and not j.done]
+            except SupervisorError:
+                running = []
+            if running:
+                self.async_update_progress(max(map(job_progress, running)) / 100)
+            await asyncio.wait({install}, timeout=1)
+        await install
 
     async def async_step_start_addon(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Start the add-on and wait for it to announce itself."""

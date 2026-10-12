@@ -38,7 +38,9 @@ async def test_automation_run_exported(hass: HomeAssistant, aioclient_mock: Aioh
     for path in ("logs", "metrics", "traces"):
         aioclient_mock.post(f"{URL}/v1/{path}", json={})
     assert await async_setup_component(hass, "automation", {"automation": [AUTOMATION]})
-    entry = MockConfigEntry(domain=DOMAIN, title="Bindplane", data={CONF_OTLP_URL: URL}, options={"metrics": False})
+    entry = MockConfigEntry(
+        domain=DOMAIN, title="Bindplane", data={CONF_OTLP_URL: URL}, options={"metrics": False, "events": ["porch_on"]}
+    )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
 
@@ -53,9 +55,9 @@ async def test_automation_run_exported(hass: HomeAssistant, aioclient_mock: Aioh
     assert root["name"] == "automation: Porch light"
     assert len(root["traceId"]) == 32 and all(s["traceId"] == root["traceId"] for s in spans)
     assert "status" not in root
-    assert attrs(root)["entity_id"] == "automation.porch_light"
-    assert attrs(root)["homeassistant.script_execution"] == "finished"
-    assert "event 'motion'" in attrs(root)["homeassistant.trigger"]
+    assert attrs(root)["homeassistant.entity.id"] == "automation.porch_light"
+    assert attrs(root)["homeassistant.trace.script_execution"] == "finished"
+    assert "event 'motion'" in attrs(root)["homeassistant.trace.trigger"]
 
     by_name = {s["name"]: s for s in spans[1:]}
     assert {"trigger/0", "action/0", "action/1", "action/1/choose/0/sequence/0"} <= set(by_name)
@@ -64,6 +66,18 @@ async def test_automation_run_exported(hass: HomeAssistant, aioclient_mock: Aioh
     assert by_name["action/1/choose/0/sequence/0"]["parentSpanId"] == by_name["action/1/choose/0"]["spanId"]
     assert all(int(s["endTimeUnixNano"]) >= int(s["startTimeUnixNano"]) for s in spans)
     assert int(hass.states.get("sensor.bindplane_trace_spans_exported").state) == len(spans)
+
+    await hass.services.async_call(DOMAIN, "flush", blocking=True)
+    [porch_on] = [
+        r
+        for c in aioclient_mock.mock_calls
+        if str(c[1]).endswith("/v1/logs")
+        for s in json.loads(c[2])["resourceLogs"][0]["scopeLogs"]
+        for r in s["logRecords"]
+        if r.get("eventName") == "porch_on"
+    ]
+    assert porch_on["traceId"] == root["traceId"] and porch_on["spanId"] == root["spanId"]
+    assert attrs(porch_on)["homeassistant.step.path"] == "action/1/choose/0/sequence/0"
 
     aioclient_mock.clear_requests()
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=12))
