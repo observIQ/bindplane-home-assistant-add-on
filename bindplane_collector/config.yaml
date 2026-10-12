@@ -3,7 +3,7 @@ version: "1.109.0"
 slug: bindplane_collector
 description: Bindplane Distro for OpenTelemetry Collector, managed by Bindplane
 url: https://github.com/observIQ/bindplane-home-assistant-add-on
-image: ghcr.io/observiq/{arch}-bindplane-collector
+image: ghcr.io/observiq/{arch}-bindplane-home-assistant-collector
 stage: experimental
 arch:
   - aarch64

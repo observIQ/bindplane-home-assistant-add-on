@@ -52,7 +52,7 @@ jobs:
           - arch: aarch64
             platform: linux/arm64
     env:
-      IMAGE: ghcr.io/observiq/${{ matrix.arch }}-bindplane-collector
+      IMAGE: ghcr.io/observiq/${{ matrix.arch }}-bindplane-home-assistant-collector
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -85,10 +85,16 @@ jobs:
             journalctl --version
             for c in bashio jq paste curl; do command -v "$c"; done
             test -x /run.sh'
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           if docker manifest inspect "$IMAGE:$VERSION" > /dev/null 2>&1; then
             echo "$IMAGE:$VERSION already published; bump the version in bindplane_collector/config.yaml to publish changes."
           else
