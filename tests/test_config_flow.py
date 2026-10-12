@@ -34,6 +34,7 @@ def addon():
     with (
         patch("custom_components.bindplane.config_flow.AddonManager", return_value=manager),
         patch("custom_components.bindplane.async_setup_entry", return_value=True),
+        patch("custom_components.bindplane.async_unload_entry", return_value=True),
     ):
         yield manager
 
@@ -73,12 +74,20 @@ async def test_discovery_with_api_key_creates_configuration(
         "addon_slug": "abcd1234_bindplane_collector",
         "api_url": "https://app.bindplane.com",
         "api_key": "key",
+        "configuration": "home-assistant",
     }
     assert result["result"].unique_id == "agent-1"
     applied = next(c[2] for c in aioclient_mock.mock_calls if str(c[1]).endswith("/apply"))
-    spec = applied["resources"][0]["spec"]
-    assert spec["sources"][0]["type"] == "otlp"
-    assert spec["destinations"] == [{"name": "grafana"}]
+    resource = applied["resources"][0]
+    assert resource["apiVersion"] == "bindplane.observiq.com/v2"
+    spec = resource["spec"]
+    source = spec["sources"][0]
+    assert source["type"] == "otlp"
+    route = [{"id": "0", "components": ["destinations/d-0"]}]
+    assert source["routes"] == {"logs": route, "metrics": route, "traces": route}
+    assert spec["destinations"] == [{"id": "d-0", "name": "grafana"}]
+    journal = spec["sources"][1]
+    assert journal["type"] == "journald" and journal["routes"] == {"logs": route}
     assert spec["selector"] == {"matchLabels": {"configuration": "home-assistant"}}
     addon.async_set_addon_options.assert_awaited_once_with(
         {
@@ -98,6 +107,7 @@ async def test_discovery_with_secret_key(hass: HomeAssistant, addon):
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert "api_key" not in result["data"]
+    assert result["data"]["api_url"] == "https://bp.local"
     options = addon.async_set_addon_options.await_args.args[0]
     assert options["secret_key"] == "abc" and options["labels"] == ["room=den", "configuration=old"]
 
@@ -128,6 +138,7 @@ async def test_options(hass: HomeAssistant, addon):
         "events": ["call_service"],
         "metrics": True,
         "metrics_exclude": ["sensor.noisy"],
+        "traces": True,
     }
     entry = MockConfigEntry(domain=DOMAIN, data={"otlp_url": "http://x:4318"})
     entry.add_to_hass(hass)
@@ -153,8 +164,8 @@ async def test_user_installs_and_starts_addon(hass: HomeAssistant, addon):
         patch("custom_components.bindplane.config_flow.get_supervisor_client", return_value=supervisor),
     ):
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
-        assert result["type"] is FlowResultType.MENU
-        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "addon"})
+        assert result["type"] is FlowResultType.FORM and result["step_id"] == "user"
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
         await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.MENU and result["step_id"] == "credentials"
@@ -202,6 +213,11 @@ async def test_missing_permission_on_apply_returns_to_api_key(
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"]["api_key"] == "bps_better"
 
+    applied = next(c[2] for c in aioclient_mock.mock_calls if str(c[1]).endswith("/apply"))["resources"]
+    assert applied[0]["kind"] == "Destination" and applied[0]["spec"]["type"] == "dev_null"
+    assert applied[1]["spec"]["destinations"] == [{"id": "d-0", "name": "home-assistant-dev-null"}]
+    assert applied[1]["spec"]["sources"][0]["routes"]["logs"] == [{"id": "0", "components": ["destinations/d-0"]}]
+
 
 async def test_missing_read_permission_shown_on_api_key(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, addon
@@ -228,3 +244,14 @@ async def test_change_api_key_from_configuration(hass: HomeAssistant, aioclient_
     )
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {"configuration": "__change_api_key__"})
     assert result["step_id"] == "api_key" and not result["errors"]
+
+
+async def test_external_collector_under_advanced(hass: HomeAssistant, addon):
+    with patch("custom_components.bindplane.config_flow.is_hassio", return_value=True):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"advanced": {"otlp_url": "http://10.0.0.5:4318"}}
+        )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {"otlp_url": "http://10.0.0.5:4318"}
+    addon.async_set_addon_options.assert_not_awaited()

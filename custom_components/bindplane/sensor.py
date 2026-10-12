@@ -19,8 +19,8 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import BindplaneConfigEntry
-from .api import AGENT_STATUS
-from .const import CONF_AGENT_ID, CONF_API_URL, DOMAIN
+from .api import AGENT_STATUS, bindplane_link
+from .const import CONF_AGENT_ID, DOMAIN
 from .exporter import Exporter
 
 
@@ -56,6 +56,12 @@ EXPORTER_SENSORS = (
         translation_key="metrics_exported",
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_fn=lambda e: e.metrics_exported,
+    ),
+    ExporterSensorDescription(
+        key="spans_exported",
+        translation_key="spans_exported",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_fn=lambda e: e.spans_exported,
     ),
     ExporterSensorDescription(
         key="export_status",
@@ -100,7 +106,7 @@ async def async_setup_entry(
         manufacturer="Bindplane",
         model="Bindplane Distro for OpenTelemetry Collector",
         entry_type=DeviceEntryType.SERVICE,
-        configuration_url=entry.data.get(CONF_API_URL),
+        configuration_url=bindplane_link(entry.data),
     )
     data = entry.runtime_data
     entities: list[SensorEntity] = [ExporterSensor(entry, data.exporter, d, device) for d in EXPORTER_SENSORS]

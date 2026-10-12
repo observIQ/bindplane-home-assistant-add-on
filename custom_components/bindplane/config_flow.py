@@ -24,7 +24,9 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlow,
 )
+from homeassistant.const import MATCH_ALL
 from homeassistant.core import callback
+from homeassistant.data_entry_flow import section
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.hassio import is_hassio
 from homeassistant.helpers.selector import (
@@ -40,7 +42,15 @@ from homeassistant.helpers.selector import (
 )
 from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 
-from .api import BindplaneAuthError, BindplaneClient, BindplaneError, BindplanePermissionError, opamp_endpoint
+from .api import (
+    BindplaneAuthError,
+    BindplaneClient,
+    BindplaneError,
+    BindplanePermissionError,
+    bindplane_link,
+    opamp_endpoint,
+    server_url,
+)
 from .const import (
     ADDON_NAME,
     ADDON_SLUG,
@@ -60,9 +70,11 @@ from .const import (
     CONF_OTLP_URL,
     CONF_PROJECT_ID,
     CONF_SECRET_KEY,
+    CONF_TRACES,
     CREATE_CONFIGURATION,
     DEFAULT_API_URL,
     DEFAULT_CONFIGURATION,
+    DEFAULT_EVENTS,
     DEFAULT_LEVEL,
     DOMAIN,
     REPOSITORY_URL,
@@ -108,10 +120,23 @@ class BindplaneConfigFlow(ConfigFlow, domain=DOMAIN):
         return BindplaneOptionsFlow()
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Choose between the add-on and an external collector."""
-        if is_hassio(self.hass):
-            return self.async_show_menu(step_id="user", menu_options=["addon", "external"])
-        return await self.async_step_external()
+        """Install the add-on, unless an external collector is given under Advanced."""
+        if not is_hassio(self.hass):
+            return await self.async_step_external()
+        if user_input is None:
+            return self.async_show_form(
+                step_id="user",
+                data_schema=vol.Schema(
+                    {
+                        vol.Optional("advanced"): section(
+                            vol.Schema({vol.Optional(CONF_OTLP_URL): URL}), {"collapsed": True}
+                        )
+                    }
+                ),
+            )
+        if url := user_input.get("advanced", {}).get(CONF_OTLP_URL):
+            return await self.async_step_external({CONF_OTLP_URL: url})
+        return await self.async_step_addon()
 
     async def async_step_hassio(self, discovery_info: HassioServiceInfo) -> ConfigFlowResult:
         """Handle the add-on announcing itself."""
@@ -273,6 +298,7 @@ class BindplaneConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "apply_failed"
                 placeholders["error"] = str(err)
             else:
+                self._data[CONF_CONFIGURATION] = name
                 return await self._async_finish(
                     opamp_endpoint(self._data[CONF_API_URL]), self._secret_key, [f"configuration={name}"]
                 )
@@ -298,8 +324,9 @@ class BindplaneConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_secret_key(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Connect with an OpAMP endpoint and secret key."""
         if user_input is not None:
-            for key in (CONF_API_URL, CONF_API_KEY, CONF_PROJECT_ID):
+            for key in (CONF_API_KEY, CONF_PROJECT_ID, CONF_CONFIGURATION):
                 self._data.pop(key, None)
+            self._data[CONF_API_URL] = server_url(user_input[CONF_ENDPOINT])
             return await self._async_finish(user_input[CONF_ENDPOINT], user_input[CONF_SECRET_KEY], None)
         return self.async_show_form(
             step_id="secret_key",
@@ -369,13 +396,22 @@ class BindplaneOptionsFlow(OptionsFlow):
                     SelectSelectorConfig(options=LEVELS, mode=SelectSelectorMode.DROPDOWN)
                 ),
                 vol.Optional(CONF_EXCLUDE, default=[]): TextSelector(TextSelectorConfig(multiple=True)),
-                vol.Optional(CONF_EVENTS, default=[]): SelectSelector(
-                    SelectSelectorConfig(options=SUGGESTED_EVENTS, multiple=True, custom_value=True)
+                vol.Optional(CONF_EVENTS, default=DEFAULT_EVENTS): SelectSelector(
+                    SelectSelectorConfig(
+                        options=[MATCH_ALL, *SUGGESTED_EVENTS],
+                        multiple=True,
+                        custom_value=True,
+                        translation_key="events",
+                    )
                 ),
                 vol.Required(CONF_METRICS, default=True): BooleanSelector(),
+                vol.Required(CONF_TRACES, default=True): BooleanSelector(),
                 vol.Optional(CONF_METRICS_EXCLUDE, default=[]): EntitySelector(EntitySelectorConfig(multiple=True)),
             }
         )
+        link = bindplane_link(self.config_entry.data)
         return self.async_show_form(
-            step_id="init", data_schema=self.add_suggested_values_to_schema(schema, self.config_entry.options)
+            step_id="init",
+            data_schema=self.add_suggested_values_to_schema(schema, self.config_entry.options),
+            description_placeholders={"link": f"[Open in Bindplane ↗]({link})" if link else ""},
         )

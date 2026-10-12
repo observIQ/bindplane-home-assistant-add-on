@@ -3,11 +3,19 @@
     "flow_title": "Bindplane Collector",
     "step": {
       "user": {
-        "title": "Where is your collector?",
-        "description": "Bindplane exports Home Assistant logs and events over OpenTelemetry to a Bindplane-managed collector.",
-        "menu_options": {
-          "addon": "Run it here (Bindplane Collector add-on)",
-          "external": "Somewhere else (enter its OTLP URL)"
+        "title": "Set up Bindplane",
+        "description": "Home Assistant will install and start the **Bindplane Collector** add-on, then connect it to Bindplane.",
+        "sections": {
+          "advanced": {
+            "name": "Advanced: use my own collector",
+            "description": "Already run a collector somewhere else? Enter its OTLP/HTTP URL and the add-on won't be installed.",
+            "data": {
+              "otlp_url": "OTLP/HTTP URL"
+            },
+            "data_description": {
+              "otlp_url": "For example http://192.168.1.20:4318"
+            }
+          }
         }
       },
       "hassio_confirm": {
@@ -24,7 +32,7 @@
       },
       "api_key": {
         "title": "Bindplane API key",
-        "description": "Create an API key in Bindplane under **Project Settings → API Keys**.\n\nA scoped key (starts with `bps_`) needs these permissions:\n- **Secrets**: Read-only\n- **Configurations**: Read-only\n- **Collectors**: Read-only\n- **Resources**: Read and write\n- **Rollouts**: Read and write\n\nResources and Rollouts are only used to create the home-assistant configuration. A classic key works if your Bindplane user can edit configurations.",
+        "description": "Create an API key in Bindplane under **Project Settings → API Keys**.\n\nA scoped key (starts with `bps_`) needs these permissions:\n- **Secrets**: Read-only\n- **Configurations**: Read and write\n- **Collectors**: Read-only\n- **Resources**: Read and write\n- **Rollouts**: Read and write\n\nWrite access is only used to create the home-assistant configuration. A classic key works if your Bindplane user can edit configurations.",
         "data": {
           "api_url": "Bindplane URL",
           "api_key": "API key",
@@ -43,7 +51,7 @@
           "destinations": "Destinations"
         },
         "data_description": {
-          "destinations": "Only used when creating the configuration. Leave empty to add destinations later in Bindplane."
+          "destinations": "Only used when creating the configuration. Leave empty to start with a home-assistant-dev-null destination that discards data, then swap in a real destination in Bindplane."
         }
       },
       "secret_key": {
@@ -92,14 +100,17 @@
           "exclude_loggers": "Excluded loggers",
           "events": "Forwarded events",
           "metrics": "Export metrics",
-          "metrics_exclude": "Entities excluded from metrics"
+          "metrics_exclude": "Entities excluded from metrics",
+          "traces": "Export automation traces"
         },
         "data_description": {
-          "level": "Home Assistant's own logger level still applies first.",
+          "level": "Home Assistant only logs WARNING and above by default. Picking a lower level here makes Home Assistant produce those records for Bindplane without making its own log noisier. Per-integration levels from the logger: config still apply.",
           "exclude_loggers": "Logger name prefixes to skip, e.g. homeassistant.components.recorder",
-          "events": "Event types sent as log records. state_changed is very chatty.",
-          "metrics": "Every minute, send numeric sensors and on/off entities as OpenTelemetry gauges."
-        }
+          "events": "Event types sent as log records. All events skips state_changed unless you also pick it; entity states are already exported as metrics.",
+          "metrics": "Every minute: every entity's state, numeric attributes, availability and change count, plus CPU, memory, network and disk for Home Assistant, Supervisor and each add-on.",
+          "traces": "Send every automation and script run as an OpenTelemetry trace, with a span per trigger, condition and action."
+        },
+        "description": "{link}"
       }
     }
   },
@@ -108,6 +119,11 @@
       "options": {
         "__create__": "Create or update home-assistant",
         "__change_api_key__": "↩ Use a different API key"
+      }
+    },
+    "events": {
+      "options": {
+        "*": "All events (except state_changed)"
       }
     }
   },
@@ -121,6 +137,9 @@
       },
       "metrics_exported": {
         "name": "Metric data points exported"
+      },
+      "spans_exported": {
+        "name": "Trace spans exported"
       },
       "export_status": {
         "name": "Export status",

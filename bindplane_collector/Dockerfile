@@ -3,6 +3,10 @@ FROM ${BUILD_FROM}
 
 ARG BUILD_ARCH
 ARG BUILD_VERSION
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends systemd \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN case "${BUILD_ARCH}" in aarch64) a=arm64 ;; *) a=amd64 ;; esac \
     && mkdir -p /opt/bdot \
     && curl -fsSL "https://github.com/observIQ/bindplane-otel-collector/releases/download/v${BUILD_VERSION}/observiq-otel-collector-v${BUILD_VERSION}-linux-${a}.tar.gz" \

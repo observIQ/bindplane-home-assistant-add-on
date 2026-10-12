@@ -25,6 +25,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Bindpla
             "last_error": exporter.last_error,
             "exported": exporter.exported,
             "metrics_exported": exporter.metrics_exported,
+            "spans_exported": exporter.spans_exported,
             "dropped": exporter.dropped,
             "buffered": len(exporter.handler.buffer),
         },

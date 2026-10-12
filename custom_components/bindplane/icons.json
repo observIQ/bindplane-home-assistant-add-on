@@ -29,6 +29,9 @@
       },
       "metrics_exported": {
         "default": "mdi:chart-line"
+      },
+      "spans_exported": {
+        "default": "mdi:chart-timeline"
       }
     }
   },

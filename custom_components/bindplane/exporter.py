@@ -162,6 +162,7 @@ class Exporter:
         self.handler = handler
         self.exported = 0
         self.metrics_exported = 0
+        self.spans_exported = 0
         self.rejected = 0
         self.status = "pending"
         self.last_error: str | None = None

@@ -1,4 +1,4 @@
-"""Ship Home Assistant logs and events to a Bindplane-managed OpenTelemetry collector."""
+"""Ship Home Assistant logs, metrics and events to a Bindplane-managed OpenTelemetry collector."""
 
 from __future__ import annotations
 
@@ -8,15 +8,24 @@ import logging
 import socket
 from typing import Any
 
+from aiohasupervisor import SupervisorError
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
-from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform, __version__ as HA_VERSION
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.const import (
+    EVENT_HOMEASSISTANT_STOP,
+    EVENT_STATE_CHANGED,
+    MATCH_ALL,
+    Platform,
+    __version__ as HA_VERSION,
+)
+from homeassistant.core import Event, HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.hassio import is_hassio
 from homeassistant.helpers.instance_id import async_get as async_get_instance_id
+from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -32,11 +41,14 @@ from .const import (
     CONF_METRICS_EXCLUDE,
     CONF_OTLP_URL,
     CONF_PROJECT_ID,
+    CONF_TRACES,
+    DEFAULT_EVENTS,
     DEFAULT_LEVEL,
     DOMAIN,
 )
 from .exporter import Exporter, OtlpHandler, attr
-from .metrics import metrics_payload, snapshot
+from .metrics import MetricsCollector, metrics_payload, supervisor_metrics
+from .traces import TraceCollector, traces_payload
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.SENSOR]
@@ -95,24 +107,68 @@ async def async_setup_entry(hass: HomeAssistant, entry: BindplaneConfigEntry) ->
     exporter = Exporter(hass, entry.data[CONF_OTLP_URL], resource, handler)
 
     root = logging.getLogger()
+    if handler.level < root.level:
+        previous = root.level
+        quieted = [(h, h.level) for h in root.handlers if h.level < previous]
+        for h, _ in quieted:
+            h.setLevel(previous)
+        root.setLevel(handler.level)
+
+        def restore_levels() -> None:
+            root.setLevel(previous)
+            for h, level in quieted:
+                h.setLevel(level)
+
+        entry.async_on_unload(restore_levels)
     root.addHandler(handler)
     entry.async_on_unload(lambda: root.removeHandler(handler))
     entry.async_on_unload(async_track_time_interval(hass, exporter.flush, FLUSH_INTERVAL, name="bindplane flush"))
     entry.async_on_unload(hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, exporter.flush))
-    for event_type in options.get(CONF_EVENTS, []):
-        entry.async_on_unload(hass.bus.async_listen(event_type, exporter.async_add_event))
+
+    events = options.get(CONF_EVENTS, DEFAULT_EVENTS)
+    if MATCH_ALL in events:
+        skip = set() if EVENT_STATE_CHANGED in events else {EVENT_STATE_CHANGED}
+
+        @callback
+        def forward(event: Event) -> None:
+            if event.event_type not in skip:
+                exporter.async_add_event(event)
+
+        entry.async_on_unload(hass.bus.async_listen(MATCH_ALL, forward))
+    else:
+        for event_type in events:
+            entry.async_on_unload(hass.bus.async_listen(event_type, exporter.async_add_event))
+
+    if options.get(CONF_TRACES, True):
+        traces = TraceCollector(hass)
+
+        async def export_traces(*_: Any) -> None:
+            if not (spans := traces.collect()):
+                return
+            status = await exporter.post("/v1/traces", traces_payload(resource, spans))
+            if status is not None and status < 400:
+                exporter.spans_exported += len(spans)
+            exporter.notify()
+
+        entry.async_on_unload(async_track_time_interval(hass, export_traces, FLUSH_INTERVAL, name="bindplane traces"))
 
     if options.get(CONF_METRICS, True):
-        exclude = set(options.get(CONF_METRICS_EXCLUDE, []))
+        collector = MetricsCollector(hass, set(options.get(CONF_METRICS_EXCLUDE, [])))
+        entry.async_on_unload(hass.bus.async_listen(EVENT_STATE_CHANGED, collector.async_count_change))
 
         async def export_metrics(*_: Any) -> None:
-            if not (points := snapshot(hass, exclude)):
-                return
+            points = collector.snapshot()
+            if is_hassio(hass):
+                try:
+                    points.update(await supervisor_metrics(hass))
+                except SupervisorError as err:
+                    _LOGGER.debug("Could not read Supervisor stats: %s", err)
             status = await exporter.post("/v1/metrics", metrics_payload(resource, points))
             if status is not None and status < 400:
                 exporter.metrics_exported += sum(len(p) for p in points.values())
             exporter.notify()
 
+        entry.async_on_unload(async_at_started(hass, export_metrics))
         entry.async_on_unload(
             async_track_time_interval(hass, export_metrics, METRICS_INTERVAL, name="bindplane metrics")
         )

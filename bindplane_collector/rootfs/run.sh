@@ -10,7 +10,7 @@ mkdir -p /data/storage
 agent_id=$(cat /data/agent_id)
 
 bashio::discovery "bindplane" "$(bashio::var.json \
-    host "$(bashio::addon.hostname)" \
+    host "$(bashio::app.hostname)" \
     port "^4318" \
     agent_id "${agent_id}")" > /dev/null \
     && bashio::log.info "Announced collector ${agent_id} to Home Assistant"

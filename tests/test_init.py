@@ -16,6 +16,7 @@ def sent(aioclient_mock):
     return [
         (s["scope"]["name"], r)
         for c in aioclient_mock.mock_calls
+        if str(c[1]).endswith("/v1/logs")
         for s in json.loads(c[2])["resourceLogs"][0]["scopeLogs"]
         for r in s["logRecords"]
     ]
@@ -23,6 +24,7 @@ def sent(aioclient_mock):
 
 async def test_logs_and_events_are_exported(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker):
     aioclient_mock.post(f"{URL}/v1/logs", json={})
+    aioclient_mock.post(f"{URL}/v1/metrics", json={})
     entry = MockConfigEntry(
         domain=DOMAIN, title="Bindplane Collector", data={CONF_OTLP_URL: URL}, options={CONF_EVENTS: ["custom_event"]}
     )
@@ -42,7 +44,8 @@ async def test_logs_and_events_are_exported(hass: HomeAssistant, aioclient_mock:
     scope, event = by_body["custom_event"]
     assert scope == "homeassistant.events"
     assert {"key": "event.data.answer", "value": {"intValue": "42"}} in event["attributes"]
-    resource = json.loads(aioclient_mock.mock_calls[0][2])["resourceLogs"][0]["resource"]["attributes"]
+    logs_call = next(c for c in aioclient_mock.mock_calls if str(c[1]).endswith("/v1/logs"))
+    resource = json.loads(logs_call[2])["resourceLogs"][0]["resource"]["attributes"]
     assert {"key": "service.name", "value": {"stringValue": "home-assistant"}} in resource
 
     assert hass.states.get("sensor.bindplane_collector_export_status").state == "ok"
@@ -56,3 +59,58 @@ async def test_logs_and_events_are_exported(hass: HomeAssistant, aioclient_mock:
     logging.getLogger("homeassistant.components.demo").warning("after unload")
     assert len(logging.getLogger().handlers) == handler_count
     assert "after unload" not in {r["body"]["stringValue"] for _, r in sent(aioclient_mock)}
+
+
+async def test_info_logs_captured_without_noisier_ha_log(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker):
+    aioclient_mock.post(f"{URL}/v1/logs", json={})
+    root = logging.getLogger()
+    other = logging.NullHandler()
+    root.addHandler(other)
+    root.setLevel(logging.WARNING)
+    try:
+        entry = MockConfigEntry(domain=DOMAIN, data={CONF_OTLP_URL: URL}, options={"metrics": False, "events": []})
+        entry.add_to_hass(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        assert root.level == logging.INFO
+        assert other.level == logging.WARNING
+
+        logging.getLogger("homeassistant.components.demo").info("now visible")
+        await hass.services.async_call(DOMAIN, "flush", blocking=True)
+        assert "now visible" in {r["body"]["stringValue"] for _, r in sent(aioclient_mock)}
+
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        assert root.level == logging.WARNING
+        assert other.level == logging.NOTSET
+    finally:
+        root.removeHandler(other)
+
+
+async def test_all_events_by_default_except_state_changed(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker):
+    aioclient_mock.post(f"{URL}/v1/logs", json={})
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_OTLP_URL: URL}, options={"metrics": False})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+
+    hass.bus.async_fire("my_custom_event", {"x": 1})
+    hass.states.async_set("light.kitchen", "on")
+    await hass.async_block_till_done()
+    await hass.services.async_call(DOMAIN, "flush", blocking=True)
+
+    events = {r["eventName"] for scope, r in sent(aioclient_mock) if scope == "homeassistant.events"}
+    assert "my_custom_event" in events
+    assert "state_changed" not in events
+
+
+def test_bindplane_links():
+    from custom_components.bindplane.api import bindplane_link, server_url
+
+    base = {"api_url": "https://app.bindplane.com"}
+    assert bindplane_link({}) is None
+    assert bindplane_link(base) == "https://app.bindplane.com/"
+    assert bindplane_link({**base, "agent_id": "a1"}) == "https://app.bindplane.com/collectors/a1"
+    assert (
+        bindplane_link({**base, "agent_id": "a1", "configuration": "home assistant", "project_id": "p1"})
+        == "https://app.bindplane.com/p/p1/configurations/home%20assistant"
+    )
+    assert server_url("wss://app.bindplane.com/v1/opamp") == "https://app.bindplane.com"
+    assert server_url("ws://bp.local:3001/v1/opamp") == "http://bp.local:3001"
