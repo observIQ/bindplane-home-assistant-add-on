@@ -23,8 +23,8 @@
 | 🔎 **One-click install** | The integration installs, starts and configures the add-on for you. No hostnames, no ports, no YAML. |
 | 🔑 **Paste one key, done** | Give the integration a Bindplane API key and it fetches your secret key, creates a `home-assistant` configuration with an OTLP source and the destinations you pick, rolls it out, and attaches the collector. |
 | 📜 **Native OTLP logs** | Every Home Assistant log record is sent as an OpenTelemetry log record, with stack traces, source location and severity intact. INFO and up by default, even though Home Assistant itself only logs WARNING. |
-| 🧾 **Host and add-on logs** | The collector reads the host journal, so Supervisor, OS and every add-on's logs (Z-Wave JS, Mosquitto, …) come along too. |
 | 📈 **Entity and system metrics** | Every entity's state, numeric attributes, availability and change count once a minute, plus CPU, memory, network and disk for Home Assistant, Supervisor and every add-on. No Prometheus endpoint, no tokens, no scraping. |
+| 🧾 **Add-on and system logs** | Logs from every running add-on (Z-Wave JS, Mosquitto, ESPHome, …), the Supervisor and the host OS, read through the Supervisor API and tagged with where they came from. |
 | 🧭 **Automation traces** | Every automation and script run becomes an OpenTelemetry trace: a root span for the run (with its trigger and result) and nested spans for each trigger, condition and action. Failed runs are marked as errors. |
 | ⚡ **Events as logs** | Every HA bus event (`call_service`, `automation_triggered`, …) as a structured log record. `state_changed` is opt-in, since metrics already cover states. |
 | 📊 **Health at a glance** | Sensors for exported and dropped records, export status, and, with an API key, the collector's connection status, version and configuration as Bindplane sees them. |
@@ -46,7 +46,7 @@ flowchart LR
 ```
 
 1. The **integration** installs and starts the **add-on**, which runs the collector and announces itself to Home Assistant through Supervisor discovery.
-2. The integration asks for your Bindplane credentials, writes them into the add-on and restarts it. The collector connects to Bindplane.
+2. The integration asks for a Bindplane API key, fetches your secret key with it, writes both into the add-on and restarts it. The collector connects to Bindplane.
 3. If you gave it an API key, the integration **applies a default configuration** (OTLP source → your destinations) and labels the collector so Bindplane rolls it out.
 4. The integration attaches a handler to Home Assistant's root logger and batches records to the collector over OTLP/HTTP. Everything after that (filtering, parsing, routing, sampling) is done in Bindplane.
 
@@ -64,10 +64,7 @@ Go to **Settings → Devices & services → Add integration → Bindplane**. The
 
 ### 3. Connect to Bindplane
 
-| Option | You provide | What happens |
-|---|---|---|
-| **Bindplane API key** *(recommended)* | API key (+ project ID for scoped `bps_` keys) and the destinations to send to | Secret key fetched for you; `home-assistant` configuration (v2) created with an OTLP source and a journald source, rolled out and attached to the collector. Pick no destinations and it starts with a `home-assistant-dev-null` destination that discards data until you add a real one. |
-| **Secret key** | OpAMP endpoint + secret key | Collector connects to Bindplane; you attach a configuration with an OTLP source yourself. |
+Paste a Bindplane API key (plus the project ID for scoped `bps_` keys) and pick the destinations to send to. The integration fetches your secret key, creates and rolls out a `home-assistant` configuration (v2) with an OTLP source, and attaches the collector to it. Pick no destinations and it starts with a `home-assistant-dev-null` destination that discards data until you add a real one.
 
 The integration writes these into the add-on's options and restarts it.
 
@@ -101,6 +98,7 @@ Already running a collector somewhere else? Expand **Advanced: use my own collec
 | Export metrics | on | Send entity states as gauges every 60 s. |
 | Entities excluded from metrics | *(none)* | Entities to leave out of metrics. |
 | Export automation traces | on | Send automation and script runs as traces. |
+| Export add-on and system logs | on | Follow add-on, Supervisor and host logs. Home Assistant OS and Supervised only. |
 
 ## What a record looks like
 

@@ -23,6 +23,7 @@ CONF_EVENTS = "events"
 CONF_METRICS = "metrics"
 CONF_METRICS_EXCLUDE = "metrics_exclude"
 CONF_TRACES = "traces"
+CONF_SUPERVISOR_LOGS = "supervisor_logs"
 
 DEFAULT_API_URL = "https://app.bindplane.com"
 DEFAULT_CONFIGURATION = "home-assistant"

@@ -42,6 +42,7 @@ from .const import (
     CONF_METRICS_EXCLUDE,
     CONF_OTLP_URL,
     CONF_PROJECT_ID,
+    CONF_SUPERVISOR_LOGS,
     CONF_TRACES,
     DEFAULT_EVENTS,
     DEFAULT_LEVEL,
@@ -49,6 +50,7 @@ from .const import (
 )
 from .exporter import Exporter, OtlpHandler, attr
 from .metrics import MetricsCollector, metrics_payload, supervisor_metrics
+from .supervisor_logs import SupervisorLogs
 from .traces import TraceCollector, traces_payload
 
 _LOGGER = logging.getLogger(__name__)
@@ -139,6 +141,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: BindplaneConfigEntry) ->
     else:
         for event_type in events:
             entry.async_on_unload(hass.bus.async_listen(event_type, exporter.async_add_event))
+
+    if is_hassio(hass) and options.get(CONF_SUPERVISOR_LOGS, True):
+        supervisor_logs = SupervisorLogs(hass, handler)
+        entry.async_on_unload(supervisor_logs.stop)
+        entry.async_on_unload(async_at_started(hass, supervisor_logs.async_refresh))
+        entry.async_on_unload(
+            async_track_time_interval(
+                hass, supervisor_logs.async_refresh, METRICS_INTERVAL, name="bindplane log streams"
+            )
+        )
 
     if options.get(CONF_TRACES, True):
         traces = TraceCollector(hass)

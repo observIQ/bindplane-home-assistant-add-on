@@ -22,16 +22,8 @@
         "title": "Bindplane Collector found",
         "description": "The Bindplane Collector add-on is running. Set it up to send Home Assistant logs to Bindplane?"
       },
-      "credentials": {
-        "title": "Connect to Bindplane",
-        "description": "With an API key, Home Assistant fetches your secret key and creates a ready-to-go configuration for you.",
-        "menu_options": {
-          "api_key": "Bindplane API key (recommended)",
-          "secret_key": "Secret key only"
-        }
-      },
       "api_key": {
-        "title": "Bindplane API key",
+        "title": "Connect to Bindplane",
         "description": "Create an API key in Bindplane under **Project Settings → API Keys**.\n\nA scoped key (starts with `bps_`) needs these permissions:\n- **Secrets**: Read-only\n- **Configurations**: Read and write\n- **Collectors**: Read-only\n- **Resources**: Read and write\n- **Rollouts**: Read and write\n\nWrite access is only used to create the home-assistant configuration. A classic key works if your Bindplane user can edit configurations.",
         "data": {
           "api_url": "Bindplane URL",
@@ -52,14 +44,6 @@
         },
         "data_description": {
           "destinations": "Only used when creating the configuration. Leave empty to start with a home-assistant-dev-null destination that discards data, then swap in a real destination in Bindplane."
-        }
-      },
-      "secret_key": {
-        "title": "Secret key",
-        "description": "Find it in Bindplane under **Install Agent**. Afterwards, attach a configuration with an OpenTelemetry (OTLP) source to the collector.",
-        "data": {
-          "endpoint": "OpAMP endpoint",
-          "secret_key": "Secret key"
         }
       },
       "external": {
@@ -101,14 +85,16 @@
           "events": "Forwarded events",
           "metrics": "Export metrics",
           "metrics_exclude": "Entities excluded from metrics",
-          "traces": "Export automation traces"
+          "traces": "Export automation traces",
+          "supervisor_logs": "Export add-on and system logs"
         },
         "data_description": {
           "level": "Home Assistant only logs WARNING and above by default. Picking a lower level here makes Home Assistant produce those records for Bindplane without making its own log noisier. Per-integration levels from the logger: config still apply.",
           "exclude_loggers": "Logger name prefixes to skip, e.g. homeassistant.components.recorder",
           "events": "Event types sent as log records. All events skips state_changed unless you also pick it; entity states are already exported as metrics.",
           "metrics": "Every minute: every entity's state, numeric attributes, availability and change count, plus CPU, memory, network and disk for Home Assistant, Supervisor and each add-on.",
-          "traces": "Send every automation and script run as an OpenTelemetry trace, with a span per trigger, condition and action."
+          "traces": "Send every automation and script run as an OpenTelemetry trace, with a span per trigger, condition and action.",
+          "supervisor_logs": "Follow the logs of every running add-on, the Supervisor and the host OS through the Supervisor API. Home Assistant OS and Supervised only."
         },
         "description": "{link}"
       }

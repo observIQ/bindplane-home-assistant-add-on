@@ -72,12 +72,6 @@ def bindplane_link(data: Mapping[str, Any]) -> str | None:
     return ui_url(api_url, project)
 
 
-def server_url(opamp_endpoint: str) -> str:
-    """Return the Bindplane server URL for an OpAMP endpoint."""
-    url = opamp_endpoint.replace("wss://", "https://", 1).replace("ws://", "http://", 1)
-    return url.removesuffix("/").removesuffix("/v1/opamp")
-
-
 def configuration_resource(name: str, destinations: list[str]) -> dict[str, Any]:
     """Return a v2 Configuration with an OTLP source routed to the given destinations."""
     dest_ids = [f"d-{i}" for i in range(len(destinations))]
@@ -87,7 +81,7 @@ def configuration_resource(name: str, destinations: list[str]) -> dict[str, Any]
         "kind": "Configuration",
         "metadata": {
             "name": name,
-            "description": "Home Assistant logs, metrics and events over OTLP, plus host and add-on logs from the journal",
+            "description": "Home Assistant logs, metrics, traces and events over OTLP",
             "labels": {"platform": "linux", "agent-type": "observiq-otel-collector"},
         },
         "spec": {
@@ -102,16 +96,6 @@ def configuration_resource(name: str, destinations: list[str]) -> dict[str, Any]
                         {"name": "http_port", "value": 4318},
                     ],
                     "routes": {"logs": route, "metrics": route, "traces": route},
-                },
-                {
-                    "id": "home-assistant-journal",
-                    "type": "journald",
-                    "parameters": [
-                        {"name": "directory", "value": "/var/log/journal"},
-                        {"name": "priority", "value": "info"},
-                        {"name": "start_at", "value": "end"},
-                    ],
-                    "routes": {"logs": route},
                 },
             ],
             "destinations": [{"id": i, "name": d} for i, d in zip(dest_ids, destinations, strict=True)],

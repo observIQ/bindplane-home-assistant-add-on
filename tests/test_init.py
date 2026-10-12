@@ -102,7 +102,7 @@ async def test_all_events_by_default_except_state_changed(hass: HomeAssistant, a
 
 
 def test_bindplane_links():
-    from custom_components.bindplane.api import bindplane_link, server_url
+    from custom_components.bindplane.api import bindplane_link
 
     base = {"api_url": "https://app.bindplane.com"}
     assert bindplane_link({}) is None
@@ -112,5 +112,3 @@ def test_bindplane_links():
         bindplane_link({**base, "agent_id": "a1", "configuration": "home assistant", "project_id": "p1"})
         == "https://app.bindplane.com/p/p1/configurations/home%20assistant"
     )
-    assert server_url("wss://app.bindplane.com/v1/opamp") == "https://app.bindplane.com"
-    assert server_url("ws://bp.local:3001/v1/opamp") == "http://bp.local:3001"

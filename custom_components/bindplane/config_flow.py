@@ -48,7 +48,6 @@ from .api import (
     BindplanePermissionError,
     bindplane_link,
     opamp_endpoint,
-    server_url,
 )
 from .const import (
     ADDON_NAME,
@@ -70,6 +69,7 @@ from .const import (
     CONF_OTLP_URL,
     CONF_PROJECT_ID,
     CONF_SECRET_KEY,
+    CONF_SUPERVISOR_LOGS,
     CONF_TRACES,
     CREATE_CONFIGURATION,
     DEFAULT_API_URL,
@@ -149,7 +149,7 @@ class BindplaneConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is None:
             self._set_confirm_only()
             return self.async_show_form(step_id="hassio_confirm")
-        return await self.async_step_credentials()
+        return await self.async_step_api_key()
 
     async def _async_use_discovery(self, config: dict[str, Any]) -> None:
         url = f"http://{config['host']}:{config['port']}"
@@ -229,11 +229,7 @@ class BindplaneConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_addon_ready(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Add-on is running."""
-        return await self.async_step_credentials()
-
-    async def async_step_credentials(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Choose how to connect the collector to Bindplane."""
-        return self.async_show_menu(step_id="credentials", menu_options=["api_key", "secret_key"])
+        return await self.async_step_api_key()
 
     async def async_step_api_key(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Connect with a Bindplane API key."""
@@ -321,31 +317,13 @@ class BindplaneConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="configuration", data_schema=schema, errors=errors, description_placeholders=placeholders
         )
 
-    async def async_step_secret_key(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Connect with an OpAMP endpoint and secret key."""
-        if user_input is not None:
-            for key in (CONF_API_KEY, CONF_PROJECT_ID, CONF_CONFIGURATION):
-                self._data.pop(key, None)
-            self._data[CONF_API_URL] = server_url(user_input[CONF_ENDPOINT])
-            return await self._async_finish(user_input[CONF_ENDPOINT], user_input[CONF_SECRET_KEY], None)
-        return self.async_show_form(
-            step_id="secret_key",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_ENDPOINT, default=opamp_endpoint(DEFAULT_API_URL)): URL,
-                    vol.Required(CONF_SECRET_KEY): PASSWORD,
-                }
-            ),
-        )
-
-    async def _async_finish(self, endpoint: str, secret_key: str, labels: list[str] | None) -> ConfigFlowResult:
+    async def _async_finish(self, endpoint: str, secret_key: str, labels: list[str]) -> ConfigFlowResult:
         manager = self._addon_manager()
         try:
             options = dict((await manager.async_get_addon_info()).options)
             options.update({CONF_ENDPOINT: endpoint, CONF_SECRET_KEY: secret_key})
-            if labels is not None:
-                kept = [x for x in options.get("labels", []) if not x.startswith("configuration=")]
-                options["labels"] = [*kept, *labels]
+            kept = [x for x in options.get("labels", []) if not x.startswith("configuration=")]
+            options["labels"] = [*kept, *labels]
             await manager.async_set_addon_options(options)
             await manager.async_restart_addon()
         except (AddonError, SupervisorError) as err:
@@ -379,7 +357,7 @@ class BindplaneConfigFlow(ConfigFlow, domain=DOMAIN):
         self._data = dict(self._get_reconfigure_entry().data)
         self._addon_slug = self._data.get(CONF_ADDON_SLUG)
         if self._addon_slug:
-            return await self.async_step_credentials()
+            return await self.async_step_api_key()
         return await self.async_step_external()
 
 
@@ -406,6 +384,7 @@ class BindplaneOptionsFlow(OptionsFlow):
                 ),
                 vol.Required(CONF_METRICS, default=True): BooleanSelector(),
                 vol.Required(CONF_TRACES, default=True): BooleanSelector(),
+                vol.Required(CONF_SUPERVISOR_LOGS, default=True): BooleanSelector(),
                 vol.Optional(CONF_METRICS_EXCLUDE, default=[]): EntitySelector(EntitySelectorConfig(multiple=True)),
             }
         )

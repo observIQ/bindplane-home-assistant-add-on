@@ -77,7 +77,6 @@ jobs:
           docker run --rm --platform ${{ matrix.platform }} --entrypoint sh "$IMAGE:$VERSION" -c '
             set -e
             /opt/bdot/observiq-otel-collector --version
-            journalctl --version
             for c in bashio jq paste curl; do command -v "$c"; done
             test -x /run.sh'
       - name: Log in to GHCR
