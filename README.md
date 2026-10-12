@@ -9,7 +9,6 @@
 
 **Ship Home Assistant logs, metrics and events to any observability backend through a Bindplane-managed OpenTelemetry collector, configured entirely from the HA UI.**
 
-[![Add repository](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FobservIQ%2Fbindplane-home-assistant-add-on)
 [![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=observIQ&repository=bindplane-home-assistant-add-on&category=integration)
 
 </div>
@@ -70,7 +69,7 @@ Go to **Settings → Devices & services → Add integration → Bindplane** and 
 
 The integration writes these into the add-on's options and restarts it.
 
-Already installed the add-on yourself (via **Add repository** above)? Home Assistant shows **Bindplane Collector discovered** under **Settings → Devices & services**. Click **Configure** and you go straight to step 3.
+Already installed the add-on yourself? Home Assistant shows **Bindplane Collector discovered** under **Settings → Devices & services**. Click **Configure** and you go straight to step 3.
 
 Not on Home Assistant OS, or already running a collector somewhere else? Pick **Somewhere else** and enter its OTLP/HTTP URL (e.g. `http://192.168.1.20:4318`).
 
