@@ -3,10 +3,7 @@
 
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/observIQ/bindplane-home-assistant-add-on/main/custom_components/bindplane/brand/dark_logo@2x.png">
-  <img src="https://raw.githubusercontent.com/observIQ/bindplane-home-assistant-add-on/main/custom_components/bindplane/brand/logo@2x.png" alt="Bindplane" width="300">
-</picture>
+<img src="https://raw.githubusercontent.com/observIQ/bindplane-home-assistant-add-on/main/bindplane_collector/logo.png" alt="Bindplane" width="250">
 
 # Bindplane for Home Assistant
 
