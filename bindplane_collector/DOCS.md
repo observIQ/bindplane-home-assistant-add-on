@@ -1,7 +1,7 @@
 # Bindplane Collector
 
 > [!WARNING]
-> **Experimental.** This add-on and integration are experimental and may change or break without notice. Bindplane does not provide support for this add-on or integration specifically. Please report problems through [GitHub issues](https://github.com/observIQ/bindplane-home-assistant-add-on/issues).
+> Bindplane does not provide support for this add-on or integration specifically. Please report problems through [GitHub issues](https://github.com/observIQ/bindplane-home-assistant-add-on/issues).
 
 Runs the Bindplane Distro for OpenTelemetry Collector, managed remotely by Bindplane.
 
