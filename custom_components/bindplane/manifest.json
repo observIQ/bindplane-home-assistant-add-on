@@ -2,7 +2,7 @@
   "domain": "bindplane",
   "name": "Bindplane",
   "after_dependencies": ["hassio", "trace"],
-  "codeowners": [],
+  "codeowners": ["@dyl10s"],
   "config_flow": true,
   "documentation": "https://github.com/observIQ/bindplane-home-assistant-add-on",
   "integration_type": "service",
