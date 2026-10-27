@@ -112,3 +112,20 @@ def test_bindplane_links():
         bindplane_link({**base, "agent_id": "a1", "configuration": "home assistant", "project_id": "p1"})
         == "https://app.bindplane.com/p/p1/configurations/home%20assistant"
     )
+
+
+async def test_revoked_api_key_starts_reauth(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker):
+    aioclient_mock.post(f"{URL}/v1/logs", json={})
+    aioclient_mock.post(f"{URL}/v1/metrics", json={})
+    aioclient_mock.get("https://app.bindplane.com/v1/collectors/agent-1", status=401)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_OTLP_URL: URL, "api_url": "https://app.bindplane.com", "api_key": "old", "agent_id": "agent-1"},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    flows = hass.config_entries.flow.async_progress()
+    assert [f["context"]["source"] for f in flows] == ["reauth"]
+    assert flows[0]["step_id"] == "api_key"

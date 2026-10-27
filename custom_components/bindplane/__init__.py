@@ -21,6 +21,7 @@ from homeassistant.const import (
     __version__ as HA_VERSION,
 )
 from homeassistant.core import Event, HomeAssistant, ServiceCall, callback
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_time_interval
@@ -31,7 +32,7 @@ from homeassistant.helpers.system_info import async_get_system_info
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import BindplaneClient, BindplaneError
+from .api import BindplaneAuthError, BindplaneClient, BindplaneError
 from .const import (
     ALL_EVENTS,
     CONF_AGENT_ID,
@@ -211,6 +212,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: BindplaneConfigEntry) ->
         async def update() -> dict[str, Any] | None:
             try:
                 return await client.collector(entry.data[CONF_AGENT_ID])
+            except BindplaneAuthError as err:
+                raise ConfigEntryAuthFailed(str(err)) from err
             except BindplaneError as err:
                 raise UpdateFailed(str(err)) from err
 

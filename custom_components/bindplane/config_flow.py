@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 import logging
 from typing import Any
 
@@ -18,6 +19,7 @@ from homeassistant.components.hassio import (
 )
 from homeassistant.config_entries import (
     SOURCE_HASSIO,
+    SOURCE_REAUTH,
     SOURCE_RECONFIGURE,
     ConfigEntry,
     ConfigFlow,
@@ -271,6 +273,8 @@ class BindplaneConfigFlow(ConfigFlow, domain=DOMAIN):
             return self._show_api_key_form("missing_permission", str(err))
         except BindplaneError as err:
             return self._show_api_key_form("cannot_connect", str(err))
+        if self.source == SOURCE_REAUTH:
+            return self.async_update_reload_and_abort(self._get_reauth_entry(), data=self._data)
         return await self.async_step_configuration()
 
     def _show_api_key_form(self, error: str | None = None, detail: str = "") -> ConfigFlowResult:
@@ -367,6 +371,11 @@ class BindplaneConfigFlow(ConfigFlow, domain=DOMAIN):
                 {vol.Required(CONF_OTLP_URL, default=self._data.get(CONF_OTLP_URL, "http://")): URL}
             ),
         )
+
+    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
+        """Ask for a new API key after Bindplane rejected the old one."""
+        self._data = dict(entry_data)
+        return self._show_api_key_form()
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Change the Bindplane connection."""

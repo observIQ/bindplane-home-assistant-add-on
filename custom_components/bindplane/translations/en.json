@@ -72,7 +72,8 @@
       "addon_not_found": "Could not find the Bindplane Collector add-on in the add-on store.",
       "addon_failed": "The Bindplane Collector add-on failed to install or start. Check the Supervisor logs.",
       "addon_set_config_failed": "Could not save the Bindplane Collector add-on options.",
-      "reconfigure_successful": "Reconfigured. The collector is reconnecting to Bindplane."
+      "reconfigure_successful": "Reconfigured. The collector is reconnecting to Bindplane.",
+      "reauth_successful": "API key updated."
     }
   },
   "options": {

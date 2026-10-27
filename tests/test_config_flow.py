@@ -261,3 +261,23 @@ async def test_external_collector_under_advanced(hass: HomeAssistant, addon):
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"] == {"otlp_url": "http://10.0.0.5:4318"}
     addon.async_set_addon_options.assert_not_awaited()
+
+
+async def test_reauth_updates_api_key(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, addon):
+    aioclient_mock.get(f"{API}/secret-keys", json={"defaultSecretKey": "s3cret"})
+    aioclient_mock.get(f"{API}/configurations", json={"configurations": []})
+    aioclient_mock.get(f"{API}/destinations", json={"destinations": []})
+    aioclient_mock.get(f"{API}/collectors/agent-1", json={"agent": {}})
+    data = {"api_url": "https://app.bindplane.com", "api_key": "old", "agent_id": "agent-1", "configuration": "c"}
+    entry = MockConfigEntry(domain=DOMAIN, unique_id="agent-1", data=data)
+    entry.add_to_hass(hass)
+
+    result = await entry.start_reauth_flow(hass)
+    assert result["step_id"] == "api_key"
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"api_url": "https://app.bindplane.com", "api_key": "new"}
+    )
+
+    assert result["type"] is FlowResultType.ABORT and result["reason"] == "reauth_successful"
+    assert entry.data == {**data, "api_key": "new"}
+    addon.async_restart_addon.assert_not_awaited()
